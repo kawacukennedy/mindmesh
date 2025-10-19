@@ -98,6 +98,7 @@ struct MindMesh {
     show_contextual_hint: bool,
     contextual_hint: String,
     last_activity: u64,
+    show_collaboration: bool,
     deterministic_mode: bool,
     energy_budget: f64,
     rewire_mode: bool,
@@ -350,6 +351,7 @@ enum Message {
     HelpSearchChanged(String),
     UpdateActivity,
     DismissHint,
+    ToggleCollaboration,
 }
 
 impl Application for MindMesh {
@@ -458,6 +460,7 @@ impl Application for MindMesh {
                 show_contextual_hint: false,
                 contextual_hint: String::new(),
                 last_activity: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                show_collaboration: false,
                 deterministic_mode: false,
                 energy_budget: 100.0,
                 rewire_mode: false,
@@ -1047,6 +1050,9 @@ impl Application for MindMesh {
             Message::DismissHint => {
                 self.show_contextual_hint = false;
             }
+            Message::ToggleCollaboration => {
+                self.show_collaboration = !self.show_collaboration;
+            }
             Message::NewProject => {
                 self.network = Network::new();
                 self.notifications.push("New project created".to_string());
@@ -1276,6 +1282,7 @@ impl Application for MindMesh {
                         button("🔄 Replay").on_press(Message::MetaLearning).style(iced::theme::Button::Secondary),
                         button("🎯 Pattern Search").on_press(Message::AiGuidedRewiring).style(iced::theme::Button::Secondary),
                         button("🤖 Autonomous").on_press(Message::ToggleAutonomousModal).style(iced::theme::Button::Positive),
+                    button("👥 Collaborate").on_press(Message::ToggleCollaboration).style(iced::theme::Button::Secondary),
                       ].spacing(8)
                   )
               ).width(300).padding(10).style(iced::theme::Container::Box)
@@ -1641,6 +1648,34 @@ impl Application for MindMesh {
                     text(content).size(16),
                     button("Close").on_press(Message::ToggleHelp),
                 ].spacing(15).align_items(iced::Alignment::Center)
+            ).padding(30).center_x().center_y().style(iced::theme::Container::Box).into())
+        } else if self.show_collaboration {
+            Some(container(
+                column![
+                    text("Collaboration").size(24),
+                    text("Share and collaborate on neural networks").size(16),
+                    text("Features:").size(14),
+                    text("• LAN discovery").size(12),
+                    text("• P2P synchronization").size(12),
+                    text("• Conflict resolution").size(12),
+                    text("• Token-based joining").size(12),
+                    button("Start Session").on_press(Message::ToggleCollaboration),
+                    button("Close").on_press(Message::ToggleCollaboration),
+                ].spacing(10).align_items(iced::Alignment::Center)
+            ).padding(30).center_x().center_y().style(iced::theme::Container::Box).into())
+        } else if self.show_ethics_modal {
+            Some(container(
+                column![
+                    text("Research Ethics Guidelines").size(24),
+                    text("MindMesh is designed for educational and research purposes.").size(16),
+                    text("Please ensure responsible use:").size(16),
+                    text("• Respect privacy and data rights").size(12),
+                    text("• Use for positive scientific advancement").size(12),
+                    text("• Avoid harmful applications").size(12),
+                    text("• Cite sources and acknowledge contributions").size(12),
+                    text("• Report any ethical concerns").size(12),
+                    button("I Understand").on_press(Message::ToggleEthicsModal),
+                ].spacing(10).align_items(iced::Alignment::Center)
             ).padding(30).center_x().center_y().style(iced::theme::Container::Box).into())
         } else {
             None
