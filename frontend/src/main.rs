@@ -76,6 +76,8 @@ struct MindMesh {
     autonomous_preset: String,
     autonomous_energy_budget: f64,
     autonomous_time_limit: u64,
+    autonomous_detection_sensitivity: f32,
+    autonomous_logging_level: String,
     profiling_mode: bool,
     show_ethics_modal: bool,
     show_onboarding: bool,
@@ -310,6 +312,8 @@ enum Message {
     SetAutonomousPreset(String),
     SetAutonomousEnergyBudget(f64),
     SetAutonomousTimeLimit(u64),
+    SetAutonomousDetectionSensitivity(f32),
+    SetAutonomousLoggingLevel(String),
     StartAutonomousExperiment,
     ToggleProfilingMode,
     ToggleEthicsModal,
@@ -419,8 +423,10 @@ impl Application for MindMesh {
              sandbox_network: None,
              show_autonomous_modal: false,
              autonomous_preset: "Dream".to_string(),
-             autonomous_energy_budget: 100.0,
-             autonomous_time_limit: 300,
+              autonomous_energy_budget: 100.0,
+              autonomous_time_limit: 300,
+              autonomous_detection_sensitivity: 0.5,
+              autonomous_logging_level: "Medium".to_string(),
              profiling_mode: false,
              show_ethics_modal: false,
              show_onboarding: true, // Show on first run
@@ -869,6 +875,12 @@ impl Application for MindMesh {
             }
             Message::SetAutonomousTimeLimit(limit) => {
                 self.autonomous_time_limit = limit;
+            }
+            Message::SetAutonomousDetectionSensitivity(sens) => {
+                self.autonomous_detection_sensitivity = sens;
+            }
+            Message::SetAutonomousLoggingLevel(level) => {
+                self.autonomous_logging_level = level;
             }
             Message::StartAutonomousExperiment => {
                 // Start autonomous experiment
@@ -1425,12 +1437,12 @@ impl Application for MindMesh {
                 column![
                     text("Welcome to MindMesh").size(24).style(iced::theme::Text::Color(theme.text)),
                     text(match self.onboarding_step {
-                        0 => "This is the main canvas where your neural network visualizes.",
-                        1 => "Use the left sidebar to manage projects and inputs.",
-                        2 => "Right sidebar has controls and export options.",
-                        3 => "Try mapping an input to see the network react.",
-                        4 => "Save your first snapshot to preserve your work.",
-                        _ => "You're all set! Explore and create.",
+                        0 => "Project intro, privacy explanation (local-first), choose language, optional voice tutorial toggle",
+                        1 => "Highlight Canvas, Input Panel, Snapshot Manager (user must interact with each)",
+                        2 => "User types a phrase or drags an image. System offers Auto-Embed (recommended) and Ultralite mapping. Show estimated neuron usage and storage cost.",
+                        3 => "Run 10 simulation steps with mini-analytics. Show 'What you are seeing' callout explaining pulses and clusters.",
+                        4 => "Suggest name, auto-generate reproducibility manifest summary, offer interactive HTML export suggestion (size estimate).",
+                        _ => "'First Thought' badge unlocked, show next suggestions: 'Explore Analytics', 'Try Autonomous Mode', 'Connect LED Strip'.",
                     }).size(16),
                     row![
                         button("Skip").on_press(Message::SkipOnboarding).style(iced::theme::Button::Secondary),
@@ -1448,25 +1460,48 @@ impl Application for MindMesh {
             };
             let estimated_time = "2m 34s"; // placeholder
             Some(container(
-                column![
-                    text("Export Wizard").size(24),
-                    text("Choose format:").size(16),
-                    row![
-                        button("JSON").on_press(Message::SetExportFormat("JSON".to_string())),
-                        button("GIF").on_press(Message::SetExportFormat("GIF".to_string())),
-                        button("MP4").on_press(Message::SetExportFormat("MP4".to_string())),
-                        button("VR Scene").on_press(Message::SetExportFormat("VR Scene".to_string())),
-                    ].spacing(10),
-                    text(format!("Selected: {}", self.export_format)).size(14),
-                    text("Options:").size(16),
-                    button(if self.export_delta_only { "Delta Only: On" } else { "Delta Only: Off" }).on_press(Message::ToggleExportDeltaOnly),
-                    text("Compression Level:").size(14),
-                    vertical_slider(0.0..=1.0, self.export_compress, Message::SetExportCompress).width(200),
-                    button(if self.export_encryption { "Encryption: On" } else { "Encryption: Off" }).on_press(Message::ToggleExportEncryption),
-                    text(format!("Estimated Size: {}", estimated_size)).size(14),
-                    text(format!("Estimated Time: {}", estimated_time)).size(14),
-                    button("Start Export").on_press(Message::StartExport).style(iced::theme::Button::Primary),
-                    button("Cancel").on_press(Message::ShowExportWizard).style(iced::theme::Button::Secondary),
+                row![
+                    // Left column: format selection, presets, size estimate
+                    container(
+                        column![
+                            text("Format Selection").size(16),
+                            button("JSON").on_press(Message::SetExportFormat("JSON".to_string())),
+                            button("GIF").on_press(Message::SetExportFormat("GIF".to_string())),
+                            button("MP4").on_press(Message::SetExportFormat("MP4".to_string())),
+                            button("VR Scene").on_press(Message::SetExportFormat("VR Scene".to_string())),
+                            text(format!("Selected: {}", self.export_format)).size(14),
+                            text("Presets").size(14),
+                            button("Quick Export").on_press(Message::StartExport),
+                            text(format!("Estimated Size: {}", estimated_size)).size(12),
+                            text(format!("Estimated Time: {}", estimated_time)).size(12),
+                        ].spacing(10)
+                    ).width(200).padding(10).style(iced::theme::Container::Box),
+                    // Middle column: detailed options and checkboxes
+                    container(
+                        column![
+                            text("Options").size(16),
+                            button(if self.export_delta_only { "Delta Only: On" } else { "Delta Only: Off" }).on_press(Message::ToggleExportDeltaOnly),
+                            text("Compression Level:").size(14),
+                            vertical_slider(0.0..=1.0, self.export_compress, Message::SetExportCompress).width(150),
+                            button(if self.export_encryption { "Encryption: On" } else { "Encryption: Off" }).on_press(Message::ToggleExportEncryption),
+                            text("Include Analytics").size(14),
+                            text("Include Thumbnails").size(14),
+                        ].spacing(10)
+                    ).width(250).padding(10).style(iced::theme::Container::Box),
+                    // Right column: export preview + estimated timeline + warnings
+                    container(
+                        column![
+                            text("Preview & Timeline").size(16),
+                            text("Estimated Timeline:").size(14),
+                            text("Step 1: Prepare data - 30s").size(12),
+                            text("Step 2: Compress - 1m").size(12),
+                            text("Step 3: Finalize - 1m 4s").size(12),
+                            text("Warnings:").size(14),
+                            text("Large file size may take time.").size(12),
+                            button("Start Export").on_press(Message::StartExport).style(iced::theme::Button::Primary),
+                            button("Cancel").on_press(Message::ShowExportWizard).style(iced::theme::Button::Secondary),
+                        ].spacing(10)
+                    ).width(250).padding(10).style(iced::theme::Container::Box),
                 ].spacing(10)
             ).padding(20).center_x().center_y().style(iced::theme::Container::Box).into())
         } else if self.show_mapping_wizard {
@@ -1495,6 +1530,14 @@ impl Application for MindMesh {
                     vertical_slider(10.0..=1000.0, self.autonomous_energy_budget, Message::SetAutonomousEnergyBudget).width(200),
                     text("Time Limit (seconds):").size(16),
                     vertical_slider(60.0..=3600.0, self.autonomous_time_limit as f64, |v| Message::SetAutonomousTimeLimit(v as u64)).width(200),
+                    text("Detection Sensitivity:").size(16),
+                    vertical_slider(0.0..=1.0, self.autonomous_detection_sensitivity, Message::SetAutonomousDetectionSensitivity).width(200),
+                    text("Logging Level:").size(16),
+                    row![
+                        button("Low").on_press(Message::SetAutonomousLoggingLevel("Low".to_string())),
+                        button("Medium").on_press(Message::SetAutonomousLoggingLevel("Medium".to_string())),
+                        button("High").on_press(Message::SetAutonomousLoggingLevel("High".to_string())),
+                    ].spacing(10),
                     button("Start Experiment").on_press(Message::StartAutonomousExperiment).style(iced::theme::Button::Primary),
                     button("Cancel").on_press(Message::ToggleAutonomousModal).style(iced::theme::Button::Secondary),
                 ].spacing(10)
