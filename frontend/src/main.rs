@@ -92,6 +92,8 @@ struct MindMesh {
     export_encryption: bool,
     show_shortcuts: bool,
     log_filter: String,
+    show_help: bool,
+    help_section: String,
     deterministic_mode: bool,
     energy_budget: f64,
     rewire_mode: bool,
@@ -339,6 +341,8 @@ enum Message {
     ToggleReducedMotion,
     ToggleLowPowerMode,
     ToggleVrArMode,
+    ToggleHelp,
+    SetHelpSection(String),
 }
 
 impl Application for MindMesh {
@@ -441,6 +445,8 @@ impl Application for MindMesh {
                 export_encryption: false,
                 show_shortcuts: false,
                 log_filter: String::new(),
+                show_help: false,
+                help_section: "Overview".to_string(),
                 deterministic_mode: false,
                 energy_budget: 100.0,
                 rewire_mode: false,
@@ -1014,6 +1020,12 @@ impl Application for MindMesh {
                 self.vr_ar_mode = !self.vr_ar_mode;
                 self.notifications.push(if self.vr_ar_mode { "VR/AR Mode enabled (placeholder)" } else { "VR/AR Mode disabled" }.to_string());
             }
+            Message::ToggleHelp => {
+                self.show_help = !self.show_help;
+            }
+            Message::SetHelpSection(section) => {
+                self.help_section = section;
+            }
             Message::NewProject => {
                 self.network = Network::new();
                 self.notifications.push("New project created".to_string());
@@ -1184,11 +1196,11 @@ impl Application for MindMesh {
                     iced::widget::tooltip::Position::Bottom,
                 ),
                 // Profile/Settings
-                iced::widget::Tooltip::new(
-                    button("⚙️").on_press(Message::ToggleSettings).style(iced::theme::Button::Secondary),
-                    "Settings",
-                    iced::widget::tooltip::Position::Bottom,
-                ),
+                      iced::widget::Tooltip::new(
+                          button("❓ Help").on_press(Message::ToggleHelp).style(iced::theme::Button::Secondary),
+                          "Show help and tutorials",
+                          iced::widget::tooltip::Position::Bottom,
+                      ),
             ].spacing(10).align_items(iced::Alignment::Center)
         ).padding(10).style(iced::theme::Container::Box);
 
@@ -1450,6 +1462,25 @@ impl Application for MindMesh {
                     ].spacing(10)
                 ].spacing(20).align_items(iced::Alignment::Center)
             ).padding(40).center_x().center_y().style(iced::theme::Container::Box).into())
+        } else if self.show_analytics {
+            // Simple text-based histogram for firing rates
+            let histogram = (0..10).map(|i| {
+                let count = self.network.neurons.iter().filter(|n| (n.output * 10.0) as usize == i).count();
+                format!("{:2}: {}", i, "█".repeat(count.min(20)))
+            }).collect::<Vec<_>>().join("\n");
+            Some(container(
+                column![
+                    text("Analytics Dashboard").size(20),
+                    text("Firing Rate Histogram:").size(14),
+                    text(histogram).size(12),
+                    text(format!("Neurons: {}", neuron_count)).size(14),
+                    text(format!("Connections: {}", connection_count)).size(14),
+                    text(format!("Avg Activity: {:.2}", avg_activity)).size(14),
+                    text(format!("Total Energy: {:.1}", total_energy)).size(14),
+                    button("Run Analytics").on_press(Message::RunAnalytics),
+                    button("Close").on_press(Message::ToggleAnalytics),
+                ].spacing(10)
+            ).padding(20).center_x().center_y().style(iced::theme::Container::Box).into())
         } else if self.show_export_wizard {
             let estimated_size = match self.export_format.as_str() {
                 "JSON" => "2.3 MB",
@@ -1542,6 +1573,27 @@ impl Application for MindMesh {
                     button("Cancel").on_press(Message::ToggleAutonomousModal).style(iced::theme::Button::Secondary),
                 ].spacing(10)
             ).padding(20).center_x().center_y().style(iced::theme::Container::Box).into())
+        } else if self.show_help {
+            let content = match self.help_section.as_str() {
+                "Overview" => "MindMesh is a neural network simulator with advanced visualization and AI features.",
+                "Tutorials" => "Interactive tutorials: UI Basics (5min), Mapping Advanced (12min), Autonomous Experiments (10min)",
+                "Keyboard Shortcuts" => "See the Shortcuts modal for full list.",
+                "Troubleshooting" => "Common issues: Low memory - switch to Ultralite mode, GPU issues - fallback to CPU.",
+                _ => "Select a section above.",
+            };
+            Some(container(
+                column![
+                    text("Help & Tutorials").size(24),
+                    row![
+                        button("Overview").on_press(Message::SetHelpSection("Overview".to_string())),
+                        button("Tutorials").on_press(Message::SetHelpSection("Tutorials".to_string())),
+                        button("Shortcuts").on_press(Message::SetHelpSection("Keyboard Shortcuts".to_string())),
+                        button("Troubleshooting").on_press(Message::SetHelpSection("Troubleshooting".to_string())),
+                    ].spacing(10),
+                    text(content).size(16),
+                    button("Close").on_press(Message::ToggleHelp),
+                ].spacing(15).align_items(iced::Alignment::Center)
+            ).padding(30).center_x().center_y().style(iced::theme::Container::Box).into())
         } else {
             None
         };
