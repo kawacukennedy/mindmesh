@@ -125,16 +125,16 @@ struct AppTheme {
 impl AppTheme {
     fn light() -> Self {
         Self {
-            primary: Color::from_rgb(0.3, 0.6, 0.9),
-            secondary: Color::from_rgb(0.6, 0.6, 0.6),
-            accent: Color::from_rgb(1.0, 0.7, 0.1),
-            success: Color::from_rgb(0.1, 0.9, 0.1),
-            warning: Color::from_rgb(1.0, 0.9, 0.1),
-            error: Color::from_rgb(0.9, 0.1, 0.1),
-            background: Color::from_rgb(0.97, 0.97, 0.98),
-            surface: Color::from_rgb(1.0, 1.0, 1.0),
-            text: Color::from_rgb(0.05, 0.05, 0.05),
-            border: Color::from_rgb(0.85, 0.85, 0.85),
+            primary: Color::from_rgb(0x5A as f32 / 255.0, 0xB4 as f32 / 255.0, 0xFF as f32 / 255.0), // #5AB4FF accent_secondary
+            secondary: Color::from_rgb(0.6, 0.6, 0.6), // Light gray
+            accent: Color::from_rgb(0x7B as f32 / 255.0, 0xD3 as f32 / 255.0, 0x89 as f32 / 255.0), // #7BD389 accent
+            success: Color::from_rgb(0x7B as f32 / 255.0, 0xD3 as f32 / 255.0, 0x89 as f32 / 255.0), // reuse accent
+            warning: Color::from_rgb(0xFF as f32 / 255.0, 0xC8 as f32 / 255.0, 0x57 as f32 / 255.0), // #FFC857 warning
+            error: Color::from_rgb(0xFF as f32 / 255.0, 0x6B as f32 / 255.0, 0x6B as f32 / 255.0), // #FF6B6B danger
+            background: Color::from_rgb(0.95, 0.95, 0.95), // Light background
+            surface: Color::from_rgb(1.0, 1.0, 1.0), // White surface
+            text: Color::from_rgb(0.1, 0.1, 0.1), // Dark text
+            border: Color::from_rgb(0.8, 0.8, 0.8), // Light border
         }
     }
 
@@ -151,6 +151,7 @@ impl AppTheme {
             text: Color::from_rgb(0x9A as f32 / 255.0, 0xA7 as f32 / 255.0, 0xB2 as f32 / 255.0), // #9AA7B2 muted_text
             border: Color::from_rgb(37.0/255.0, 37.0/255.0, 48.0/255.0), // approximate border
         }
+    }
     }
 
     fn high_contrast() -> Self {
@@ -1205,34 +1206,50 @@ impl Application for MindMesh {
             row![
                 // Hamburger/App Menu
                 iced::widget::Tooltip::new(
-                    button("☰").on_press(Message::ToggleInputPanel).style(iced::theme::Button::Secondary),
+                    button("☰").on_press(Message::ToggleInputPanel).style(iced::theme::Button::Secondary).padding(8),
                     "Toggle left sidebar",
                     iced::widget::tooltip::Position::Bottom,
                 ),
                 // Project Title
-                button(text(self.t("mindmesh_title").as_str()).size(self.scaled_size(22.0)).style(iced::theme::Text::Color(theme.primary))).on_press(Message::Reset).style(iced::theme::Button::Text),
+                button(text("🧠 MindMesh").size(24).style(iced::theme::Text::Color(theme.primary).weight(iced::font::Weight::Bold))).on_press(Message::Reset).style(iced::theme::Button::Text),
                 // Global Search
-                text_input("🔍 Search projects, snapshots, inputs...", &self.global_search)
+                text_input("🔍 Search...", &self.global_search)
                     .on_input(Message::GlobalSearchChanged)
-                    .padding(10),
-                // Session Indicators
-                container(
-                    text("●").size(16).style(iced::theme::Text::Color(status_color))
-                ).padding(5).style(iced::theme::Container::Box),
+                    .padding(12)
+                    .size(16),
+                // Session Indicators (improved)
+                {
+                    let (status_icon, status_text) = if self.network.neurons.iter().any(|n| n.should_fire()) {
+                        ("🟡", "Running")
+                    } else if self.notifications.iter().any(|n| n.contains("error") || n.contains("failed")) {
+                        ("🔴", "Error")
+                    } else {
+                        ("🟢", "Ready")
+                    };
+                    container(
+                        row![text(status_icon).size(12), text(status_text).size(12)].spacing(4)
+                    ).style(iced::theme::Container::Custom(Box::new(move |theme| {
+                        iced::widget::container::Appearance {
+                            background: Some(iced::Background::Color(status_color)),
+                            border: iced::Border { radius: 12.0.into(), ..Default::default() },
+                            ..Default::default()
+                        }
+                    }))).padding(iced::Padding::from([4, 8]))
+                },
                 // Save/Status
                 iced::widget::Tooltip::new(
-                    button("💾").on_press(Message::Save).style(iced::theme::Button::Positive),
+                    button("💾 Save").on_press(Message::Save).style(iced::theme::Button::Positive).padding(8),
                     "Save project",
                     iced::widget::tooltip::Position::Bottom,
                 ),
                 // Undo/Redo
                 iced::widget::Tooltip::new(
-                    button("↶").on_press(Message::Undo).style(iced::theme::Button::Secondary),
+                    button("↶").on_press(Message::Undo).style(iced::theme::Button::Secondary).padding(8),
                     "Undo",
                     iced::widget::tooltip::Position::Bottom,
                 ),
                 iced::widget::Tooltip::new(
-                    button("↷").on_press(Message::Redo).style(iced::theme::Button::Secondary),
+                    button("↷").on_press(Message::Redo).style(iced::theme::Button::Secondary).padding(8),
                     "Redo",
                     iced::widget::tooltip::Position::Bottom,
                 ),
@@ -1242,19 +1259,28 @@ impl Application for MindMesh {
                           "Show help and tutorials",
                           iced::widget::tooltip::Position::Bottom,
                       ),
-            ].spacing(10).align_items(iced::Alignment::Center)
-        ).padding(10).style(iced::theme::Container::Box);
+            ].spacing(12).align_items(iced::Alignment::Center)
+        ).padding(16).height(56).style(iced::theme::Container::Custom(Box::new(move |theme| {
+            iced::widget::container::Appearance {
+                background: Some(iced::Background::Color(theme.surface)),
+                border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                ..Default::default()
+            }
+        })));
 
         // Left Sidebar - Project & Snapshot Manager, Inputs & Datasets, Presets
         let left_sidebar = if self.show_input_panel {
             container(
                 scrollable(
                     column![
-                        text("📁 Project & Snapshot Manager").size(16).style(iced::theme::Text::Color(theme.text)),
-                        button("💾 Save Project").on_press(Message::Save).style(iced::theme::Button::Primary),
-                        button("📂 Load Project").on_press(Message::Load).style(iced::theme::Button::Secondary),
-                        button("📸 New Snapshot").on_press(Message::SaveSnapshot("Manual snapshot".to_string())).style(iced::theme::Button::Positive),
-                        button("📊 Compare Snapshots").on_press(Message::CompareSnapshots).style(iced::theme::Button::Secondary),
+                        text("📁 Project Manager").size(18).style(iced::theme::Text::Color(theme.primary).weight(iced::font::Weight::Bold)),
+                        button("💾 Save Project").on_press(Message::Save).style(iced::theme::Button::Primary).width(Length::Fill),
+                        button("📂 Load Project").on_press(Message::Load).style(iced::theme::Button::Secondary).width(Length::Fill),
+                        iced::widget::Rule::horizontal(1),
+                        text("📸 Snapshots").size(16).style(iced::theme::Text::Color(theme.text)),
+                        button("📸 New Snapshot").on_press(Message::SaveSnapshot("Manual snapshot".to_string())).style(iced::theme::Button::Positive).width(Length::Fill),
+                        button("📊 Compare").on_press(Message::CompareSnapshots).style(iced::theme::Button::Secondary).width(Length::Fill),
                         text("Snapshots:").size(12).style(iced::theme::Text::Color(theme.text)),
                         column(
                             self.snapshots.iter().enumerate().map(|(i, s)| {
@@ -1265,27 +1291,35 @@ impl Application for MindMesh {
                             }).collect::<Vec<_>>()
                         ).spacing(2),
                         iced::widget::Rule::horizontal(1),
-                        text("📊 Inputs & Datasets").size(16).style(iced::theme::Text::Color(theme.text)),
-                        button("📝 Text Input").on_press(Message::ProcessInput).style(iced::theme::Button::Primary),
-                        button("🖼️ Image Input").on_press(Message::ProcessAscii).style(iced::theme::Button::Secondary),
-                        button("🎤 Voice Input").on_press(Message::ProcessVoice).style(iced::theme::Button::Secondary),
-                        button("🧠 BCI Input").on_press(Message::ProcessBCI).style(iced::theme::Button::Secondary),
-                        button("🎮 Gesture Input").on_press(Message::ProcessGesture).style(iced::theme::Button::Secondary),
-                        button("📡 Sensor Input").on_press(Message::ProcessSensorInput).style(iced::theme::Button::Secondary),
-                        button("🗺️ Mapping Wizard").on_press(Message::ShowMappingWizard).style(iced::theme::Button::Positive),
+                        text("📊 Inputs").size(16).style(iced::theme::Text::Color(theme.text)),
+                        button("📝 Text").on_press(Message::ProcessInput).style(iced::theme::Button::Primary).width(Length::Fill),
+                        button("🖼️ Image").on_press(Message::ProcessAscii).style(iced::theme::Button::Secondary).width(Length::Fill),
+                        button("🎤 Voice").on_press(Message::ProcessVoice).style(iced::theme::Button::Secondary).width(Length::Fill),
+                        button("🧠 BCI").on_press(Message::ProcessBCI).style(iced::theme::Button::Secondary).width(Length::Fill),
+                        button("🎮 Gesture").on_press(Message::ProcessGesture).style(iced::theme::Button::Secondary).width(Length::Fill),
+                        button("📡 Sensor").on_press(Message::ProcessSensorInput).style(iced::theme::Button::Secondary).width(Length::Fill),
+                        iced::widget::Rule::horizontal(1),
+                        button("🗺️ Mapping Wizard").on_press(Message::ShowMappingWizard).style(iced::theme::Button::Positive).width(Length::Fill),
                         text("Recent Inputs:").size(12).style(iced::theme::Text::Color(theme.text)),
                         text("• Text: Hello").size(10).style(iced::theme::Text::Color(theme.text)),
                         text("• Image: sample.png").size(10).style(iced::theme::Text::Color(theme.text)),
                         iced::widget::Rule::horizontal(1),
-                        text("🎛️ Presets").size(16).style(iced::theme::Text::Color(theme.text)),
-                        button("🧠 Dream Mode").on_press(Message::AutonomousEvolution).style(iced::theme::Button::Secondary),
-                        button("🔄 Replay").on_press(Message::MetaLearning).style(iced::theme::Button::Secondary),
-                        button("🎯 Pattern Search").on_press(Message::AiGuidedRewiring).style(iced::theme::Button::Secondary),
-                        button("🤖 Autonomous").on_press(Message::ToggleAutonomousModal).style(iced::theme::Button::Positive),
-                    button("👥 Collaborate").on_press(Message::ToggleCollaboration).style(iced::theme::Button::Secondary),
+                        text("🎛️ Experiments").size(16).style(iced::theme::Text::Color(theme.text)),
+                        button("🧠 Dream").on_press(Message::AutonomousEvolution).style(iced::theme::Button::Secondary).width(Length::Fill),
+                        button("🔄 Replay").on_press(Message::MetaLearning).style(iced::theme::Button::Secondary).width(Length::Fill),
+                        button("🎯 Pattern Search").on_press(Message::AiGuidedRewiring).style(iced::theme::Button::Secondary).width(Length::Fill),
+                        button("🤖 Autonomous").on_press(Message::ToggleAutonomousModal).style(iced::theme::Button::Positive).width(Length::Fill),
+                        button("👥 Collaborate").on_press(Message::ToggleCollaboration).style(iced::theme::Button::Secondary).width(Length::Fill),
                       ].spacing(8)
                   )
-              ).width(300).padding(10).style(iced::theme::Container::Box)
+              ).width(300).padding(16).style(iced::theme::Container::Custom(Box::new(move |theme| {
+                  iced::widget::container::Appearance {
+                      background: Some(iced::Background::Color(theme.surface)),
+                      border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                      shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                      ..Default::default()
+                  }
+              })))
         } else {
             container(text("")).width(60).padding(10).style(iced::theme::Container::Box)
         };
@@ -1304,13 +1338,13 @@ impl Application for MindMesh {
                     button(if self.sandbox_network.is_some() { "✅ Commit Edit" } else { "✏️ Edit Mode" }).on_press(if self.sandbox_network.is_some() { Message::CommitSandbox } else { Message::StartSandboxEdit }),
                     button(if self.rewire_mode { "🔗 Rewire: On" } else { "🔗 Rewire: Off" }).on_press(Message::ToggleRewireMode),
                     if self.sandbox_network.is_some() { button("❌ Revert").on_press(Message::RevertSandbox) } else { button("") },
-                ].spacing(5),
+                ].spacing(8),
                 // Playback Scrubber
                 row![
                     text("Playback:").size(12),
                     vertical_slider(0.0..=100.0, self.playback_scrubber, Message::PlaybackScrubberChanged).width(200),
                     text(format!("{:.1}%", self.playback_scrubber)).size(12),
-                ].spacing(5),
+                ].spacing(8),
                 // Main Canvas
                 container(Canvas::new(self).width(Length::Fill).height(Length::Fill)),
                 // Overlays
@@ -1323,8 +1357,15 @@ impl Application for MindMesh {
                                 text(format!("🧠 {}", neuron_count)).size(10),
                                 text(format!("🔗 {}", connection_count)).size(10),
                                 text(format!("⚡ {:.1}", total_energy)).size(10),
-                            ].spacing(2)
-                        ).padding(5).style(iced::theme::Container::Box),
+                            ].spacing(4)
+                        ).padding(8).style(iced::theme::Container::Custom(Box::new(move |theme| {
+                            iced::widget::container::Appearance {
+                                background: Some(iced::Background::Color(theme.surface)),
+                                border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                                shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                                ..Default::default()
+                            }
+                        }))),
                         text(format!("🎯 {} firing", firing_count)).size(12),
                         text(if let Some(pattern) = self.network.emergent_patterns.last() {
                             format!("Pattern: {}", pattern)
@@ -1334,12 +1375,19 @@ impl Application for MindMesh {
                         // Contextual quick-actions
                         button("🔍 Focus").on_press(Message::SimulateVrGesture).style(iced::theme::Button::Secondary),
                         button("📸 Snapshot").on_press(Message::SaveSnapshot("Quick overlay".to_string())).style(iced::theme::Button::Secondary),
-                    ].spacing(10)
+                    ].spacing(16)
                 } else {
                     row![]
                 },
-            ].spacing(5)
-         ).padding(10).style(iced::theme::Container::Box);
+            ].spacing(8)
+          ).padding(16).style(iced::theme::Container::Custom(Box::new(move |theme| {
+              iced::widget::container::Appearance {
+                  background: Some(iced::Background::Color(theme.surface)),
+                  border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                  shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                  ..Default::default()
+              }
+          })));
 
         // Right Sidebar - Panels
         let right_sidebar_content = if self.show_inspector {
@@ -1403,7 +1451,7 @@ impl Application for MindMesh {
                     button("Input").on_press(Message::ToggleInputPanel).style(if self.show_input_panel { iced::theme::Button::Primary } else { iced::theme::Button::Secondary }),
                     button("AI").on_press(Message::ToggleExportAi).style(if self.show_export_ai { iced::theme::Button::Primary } else { iced::theme::Button::Secondary }),
                     button("Export").on_press(Message::ShowExportWizard).style(iced::theme::Button::Secondary),
-                ].spacing(5),
+                ].spacing(8),
                 iced::widget::Rule::horizontal(1),
                 scrollable(right_sidebar_content),
                 iced::widget::Rule::horizontal(1),
@@ -1411,8 +1459,15 @@ impl Application for MindMesh {
                 button("🗑️ Clear").on_press(Message::ClearNotifications),
             ].extend(
                 self.notifications.iter().rev().take(5).map(|n| text(format!("• {}", n)).size(11).style(iced::theme::Text::Color(theme.text)).into())
-            ).spacing(5)
-        ).width(360).padding(10).style(iced::theme::Container::Box);
+            ).spacing(8)
+        ).width(360).padding(16).style(iced::theme::Container::Custom(Box::new(move |theme| {
+            iced::widget::container::Appearance {
+                background: Some(iced::Background::Color(theme.surface)),
+                border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                ..Default::default()
+            }
+        })));
 
         // Bottom Bar - Log Console, Analytics Mini-Cards, Resource Monitor
         let footer = container(
@@ -1421,43 +1476,78 @@ impl Application for MindMesh {
                 container(
                     scrollable(
                         column![
-                             text("📋 Log Console").size(12).style(iced::theme::Text::Color(theme.text)),
-                             text_input("Filter logs...", &self.log_filter).on_input(Message::LogFilterChanged).width(150),
-                         ].extend(
-                             self.log_console.iter().rev().filter(|(log, _)| self.log_filter.is_empty() || log.contains(&self.log_filter)).take(5).map(|(log, ts)| {
-                                 let time_str = chrono::DateTime::from_timestamp(*ts as i64, 0).unwrap().format("%H:%M:%S").to_string();
-                                 text(format!("[{}] {}", time_str, log)).size(10).style(iced::theme::Text::Color(theme.text)).into()
-                             })
-                        ).spacing(2)
+                              text("📋 Log Console").size(12).style(iced::theme::Text::Color(theme.text)),
+                              text_input("Filter logs...", &self.log_filter).on_input(Message::LogFilterChanged).width(150),
+                          ].extend(
+                              self.log_console.iter().rev().filter(|(log, _)| self.log_filter.is_empty() || log.contains(&self.log_filter)).take(5).map(|(log, ts)| {
+                                  let time_str = chrono::DateTime::from_timestamp(*ts as i64, 0).unwrap().format("%H:%M:%S").to_string();
+                                  text(format!("[{}] {}", time_str, log)).size(10).style(iced::theme::Text::Color(theme.text)).into()
+                              })
+                         ).spacing(4)
                     )
-                ).width(200).height(100).style(iced::theme::Container::Box),
+                ).width(200).height(100).style(iced::theme::Container::Custom(Box::new(move |theme| {
+                    iced::widget::container::Appearance {
+                        background: Some(iced::Background::Color(theme.surface)),
+                        border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                        shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                        ..Default::default()
+                    }
+                }))),
                 // Center: Analytics Mini-Cards
                 row![
                     container(
                         column![
                             text("🧠 Neurons").size(12).style(iced::theme::Text::Color(theme.text)),
                             text(format!("{}", neuron_count)).size(14).style(iced::theme::Text::Color(theme.primary)),
-                        ].spacing(2).align_items(iced::Alignment::Center)
-                    ).padding(10).style(iced::theme::Container::Box),
+                        ].spacing(4).align_items(iced::Alignment::Center)
+                    ).padding(16).style(iced::theme::Container::Custom(Box::new(move |theme| {
+                        iced::widget::container::Appearance {
+                            background: Some(iced::Background::Color(theme.surface)),
+                            border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                            shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                            ..Default::default()
+                        }
+                    }))),
                     container(
                         column![
                             text("🔗 Connections").size(12).style(iced::theme::Text::Color(theme.text)),
                             text(format!("{}", connection_count)).size(14).style(iced::theme::Text::Color(theme.primary)),
-                        ].spacing(2).align_items(iced::Alignment::Center)
-                    ).padding(10).style(iced::theme::Container::Box),
+                        ].spacing(4).align_items(iced::Alignment::Center)
+                    ).padding(16).style(iced::theme::Container::Custom(Box::new(move |theme| {
+                        iced::widget::container::Appearance {
+                            background: Some(iced::Background::Color(theme.surface)),
+                            border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                            shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                            ..Default::default()
+                        }
+                    }))),
                     container(
                         column![
                             text("⚡ Energy").size(12).style(iced::theme::Text::Color(theme.text)),
                             text(format!("{:.1}", total_energy)).size(14).style(iced::theme::Text::Color(theme.accent)),
-                        ].spacing(2).align_items(iced::Alignment::Center)
-                    ).padding(10).style(iced::theme::Container::Box),
+                        ].spacing(4).align_items(iced::Alignment::Center)
+                    ).padding(16).style(iced::theme::Container::Custom(Box::new(move |theme| {
+                        iced::widget::container::Appearance {
+                            background: Some(iced::Background::Color(theme.surface)),
+                            border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                            shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                            ..Default::default()
+                        }
+                    }))),
                     container(
                         column![
-                             text("🎯 Firing").size(12).style(iced::theme::Text::Color(theme.text)),
-                         text(format!("{}", firing_count)).size(14).style(iced::theme::Text::Color(theme.success)),
-                          ].spacing(2).align_items(iced::Alignment::Center)
-                      ).padding(10).style(iced::theme::Container::Box),
-                ].spacing(10),
+                              text("🎯 Firing").size(12).style(iced::theme::Text::Color(theme.text)),
+                          text(format!("{}", firing_count)).size(14).style(iced::theme::Text::Color(theme.success)),
+                           ].spacing(4).align_items(iced::Alignment::Center)
+                       ).padding(16).style(iced::theme::Container::Custom(Box::new(move |theme| {
+                           iced::widget::container::Appearance {
+                               background: Some(iced::Background::Color(theme.surface)),
+                               border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                               shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                               ..Default::default()
+                           }
+                       }))),
+                ].spacing(16),
                 // Right: Status & Resources
                 container(
                     column![
@@ -1465,27 +1555,48 @@ impl Application for MindMesh {
                         text("💻 Resources").size(12).style(iced::theme::Text::Color(theme.text)),
                         text("CPU: 45% | GPU: 30% | RAM: 2.1GB").size(10).style(iced::theme::Text::Color(theme.text)),
                         text("⌨️ Shortcuts: Space=Play, R=Reset, E=Export, M=Map, A=Auto").size(10).style(iced::theme::Text::Color(theme.text)),
-                     ].spacing(2)
-                 ).width(250).style(iced::theme::Container::Box),
-            ].spacing(20).align_items(iced::Alignment::Center)
-         ).padding(5).style(iced::theme::Container::Box);
+                      ].spacing(4)
+                  ).width(250).style(iced::theme::Container::Custom(Box::new(move |theme| {
+                      iced::widget::container::Appearance {
+                          background: Some(iced::Background::Color(theme.surface)),
+                          border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                          shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                          ..Default::default()
+                      }
+                  }))),
+            ].spacing(24).align_items(iced::Alignment::Center)
+          ).padding(8).style(iced::theme::Container::Custom(Box::new(move |theme| {
+              iced::widget::container::Appearance {
+                  background: Some(iced::Background::Color(theme.surface)),
+                  border: iced::Border { radius: 8.0.into(), ..Default::default() },
+                  shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 2.0), blur_radius: 4.0 },
+                  ..Default::default()
+              }
+          })));
 
         // Modal Panels
         let modal_content: Option<Element<'_, Message>> = if self.show_settings {
             Some(container(
                 column![
-                    text("Settings").size(20),
-                    button("Toggle Theme").on_press(Message::ToggleTheme),
-                    button("High Contrast").on_press(Message::ToggleHighContrast),
-                    button("Colorblind Mode").on_press(Message::SetColorblindMode(Some("protanopia".to_string()))),
-                    button(if self.reduced_motion { "Reduced Motion: On" } else { "Reduced Motion: Off" }).on_press(Message::ToggleReducedMotion),
-                    button(if self.low_power_mode { "Low Power Mode: On" } else { "Low Power Mode: Off" }).on_press(Message::ToggleLowPowerMode),
-                    button(if self.vr_ar_mode { "VR/AR Mode: On" } else { "VR/AR Mode: Off" }).on_press(Message::ToggleVrArMode),
-                    text("Font Scale").size(14),
+                    text("Settings").size(20).style(iced::theme::Text::Color(theme.text)),
+                    button("Toggle Theme").on_press(Message::ToggleTheme).style(iced::theme::Button::Primary).padding(12),
+                    button("High Contrast").on_press(Message::ToggleHighContrast).style(iced::theme::Button::Secondary).padding(12),
+                    button("Colorblind Mode").on_press(Message::SetColorblindMode(Some("protanopia".to_string()))).style(iced::theme::Button::Secondary).padding(12),
+                    button(if self.reduced_motion { "Reduced Motion: On" } else { "Reduced Motion: Off" }).on_press(Message::ToggleReducedMotion).style(iced::theme::Button::Secondary).padding(12),
+                    button(if self.low_power_mode { "Low Power Mode: On" } else { "Low Power Mode: Off" }).on_press(Message::ToggleLowPowerMode).style(iced::theme::Button::Secondary).padding(12),
+                    button(if self.vr_ar_mode { "VR/AR Mode: On" } else { "VR/AR Mode: Off" }).on_press(Message::ToggleVrArMode).style(iced::theme::Button::Secondary).padding(12),
+                    text("Font Scale").size(14).style(iced::theme::Text::Color(theme.text)),
                     vertical_slider(0.5..=2.0, self.font_scale, Message::SetFontScale).width(200),
-                    button("Close").on_press(Message::ToggleSettings),
-                ].spacing(10)
-            ).padding(20).center_x().center_y().style(iced::theme::Container::Box).into())
+                    button("Close").on_press(Message::ToggleSettings).style(iced::theme::Button::Secondary).padding(12),
+                ].spacing(16)
+            ).padding(24).center_x().center_y().style(iced::theme::Container::Custom(Box::new(move |theme| {
+                iced::widget::container::Appearance {
+                    background: Some(iced::Background::Color(theme.surface)),
+                    border: iced::Border { radius: 12.0.into(), ..Default::default() },
+                    shadow: iced::Shadow { color: Color::BLACK, offset: iced::Vector::new(0.0, 4.0), blur_radius: 8.0 },
+                    ..Default::default()
+                }
+            }))).into())
         } else if self.show_onboarding {
             Some(container(
                 column![
