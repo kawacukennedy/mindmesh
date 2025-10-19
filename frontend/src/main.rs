@@ -85,8 +85,18 @@ struct MindMesh {
     mapping_strategy: String,
     show_export_wizard: bool,
     export_format: String,
+    export_delta_only: bool,
+    export_compress: f32,
+    export_encryption: bool,
     show_shortcuts: bool,
     log_filter: String,
+    deterministic_mode: bool,
+    energy_budget: f64,
+    rewire_mode: bool,
+    selected_neurons_for_rewire: Vec<u64>,
+    reduced_motion: bool,
+    low_power_mode: bool,
+    vr_ar_mode: bool,
 }
 
 #[derive(Clone)]
@@ -311,10 +321,20 @@ enum Message {
     ApplyMapping,
     ShowExportWizard,
     SetExportFormat(String),
+    ToggleExportDeltaOnly,
+    SetExportCompress(f32),
+    ToggleExportEncryption,
     StartExport,
     ToggleShortcuts,
     LogFilterChanged(String),
     SimulateVrGesture,
+    ToggleDeterministicMode,
+    SetEnergyBudget(f64),
+    ToggleRewireMode,
+    SelectNeuronForRewire(u64),
+    ToggleReducedMotion,
+    ToggleLowPowerMode,
+    ToggleVrArMode,
 }
 
 impl Application for MindMesh {
@@ -409,10 +429,20 @@ impl Application for MindMesh {
              mapping_input_type: "Text".to_string(),
              mapping_strategy: "Auto-embed".to_string(),
                show_export_wizard: false,
-               export_format: "JSON".to_string(),
-               show_shortcuts: false,
-               log_filter: String::new(),
-        }, Command::none())
+                export_format: "JSON".to_string(),
+                export_delta_only: false,
+                export_compress: 0.5,
+                export_encryption: false,
+                show_shortcuts: false,
+                log_filter: String::new(),
+                deterministic_mode: false,
+                energy_budget: 100.0,
+                rewire_mode: false,
+                selected_neurons_for_rewire: vec![],
+                reduced_motion: false,
+                low_power_mode: false,
+                vr_ar_mode: false,
+         }, Command::none())
     }
 
     fn title(&self) -> String {
@@ -888,6 +918,15 @@ impl Application for MindMesh {
             Message::SetExportFormat(f) => {
                 self.export_format = f;
             }
+            Message::ToggleExportDeltaOnly => {
+                self.export_delta_only = !self.export_delta_only;
+            }
+            Message::SetExportCompress(c) => {
+                self.export_compress = c;
+            }
+            Message::ToggleExportEncryption => {
+                self.export_encryption = !self.export_encryption;
+            }
             Message::StartExport => {
                 // Start export
                 match self.export_format.as_str() {
@@ -923,6 +962,45 @@ impl Application for MindMesh {
             }
             Message::SimulateVrGesture => {
                 self.notifications.push("VR Gesture: Pinch to zoom simulated".to_string());
+            }
+            Message::ToggleDeterministicMode => {
+                self.deterministic_mode = !self.deterministic_mode;
+                self.network.settings.deterministic = self.deterministic_mode;
+            }
+            Message::SetEnergyBudget(budget) => {
+                self.energy_budget = budget;
+                self.network.settings.energy_budget = budget;
+            }
+            Message::ToggleRewireMode => {
+                self.rewire_mode = !self.rewire_mode;
+                self.selected_neurons_for_rewire.clear();
+            }
+            Message::SelectNeuronForRewire(id) => {
+                if self.rewire_mode {
+                    self.selected_neurons_for_rewire.push(id);
+                    if self.selected_neurons_for_rewire.len() == 2 {
+                        let from = self.selected_neurons_for_rewire[0];
+                        let to = self.selected_neurons_for_rewire[1];
+                        self.network.add_connection(from, to, 0.5, PlasticityType::Hebbian);
+                        self.notifications.push(format!("Rewired connection from {} to {}", from, to));
+                        self.selected_neurons_for_rewire.clear();
+                    }
+                }
+            }
+            Message::ToggleReducedMotion => {
+                self.reduced_motion = !self.reduced_motion;
+            }
+            Message::ToggleLowPowerMode => {
+                self.low_power_mode = !self.low_power_mode;
+                if self.low_power_mode {
+                    self.lod_slider = 0.1;
+                    self.visualization_overlays = false;
+                    // Disable particles, etc.
+                }
+            }
+            Message::ToggleVrArMode => {
+                self.vr_ar_mode = !self.vr_ar_mode;
+                self.notifications.push(if self.vr_ar_mode { "VR/AR Mode enabled (placeholder)" } else { "VR/AR Mode disabled" }.to_string());
             }
             Message::NewProject => {
                 self.network = Network::new();
@@ -1158,6 +1236,7 @@ impl Application for MindMesh {
                     button(if self.visualization_overlays { "👁️ Hide Overlays" } else { "👁️ Show Overlays" }).on_press(Message::ToggleVisualizationOverlays),
                     button("🎯 Predict").on_press(Message::Predict),
                     button(if self.sandbox_network.is_some() { "✅ Commit Edit" } else { "✏️ Edit Mode" }).on_press(if self.sandbox_network.is_some() { Message::CommitSandbox } else { Message::StartSandboxEdit }),
+                    button(if self.rewire_mode { "🔗 Rewire: On" } else { "🔗 Rewire: Off" }).on_press(Message::ToggleRewireMode),
                     if self.sandbox_network.is_some() { button("❌ Revert").on_press(Message::RevertSandbox) } else { button("") },
                 ].spacing(5),
                 // Playback Scrubber
@@ -1217,10 +1296,14 @@ impl Application for MindMesh {
                 text("Simulation Controls").size(16).style(iced::theme::Text::Color(theme.text)),
                 button(if self.paused { "▶️ Play" } else { "⏸️ Pause" }).on_press(Message::TogglePause).style(iced::theme::Button::Primary),
                 button("⏹️ Stop").on_press(Message::Reset).style(iced::theme::Button::Secondary),
-                button("⏸️ Step").on_press(Message::Step).style(iced::theme::Button::Secondary),
-                text("Speed:").size(12),
+                button("⏭️ Step Forward").on_press(Message::Step).style(iced::theme::Button::Secondary),
+                button("⏮️ Step Back").on_press(Message::Undo).style(iced::theme::Button::Secondary),
+                text(format!("Speed: {:.1}x", self.speed)).size(12),
                 vertical_slider(0.01..=100.0, self.speed, Message::SpeedChanged).width(100),
-                button("Deterministic").on_press(Message::ToggleEnergyMode).style(iced::theme::Button::Secondary),
+                button(if self.deterministic_mode { "🎲 Deterministic: On" } else { "🎲 Deterministic: Off" }).on_press(Message::ToggleDeterministicMode).style(iced::theme::Button::Secondary),
+                text(format!("Energy Budget: {:.0}", self.energy_budget)).size(12),
+                vertical_slider(10.0..=1000.0, self.energy_budget, Message::SetEnergyBudget).width(100),
+                button("⚡ Energy Efficient").on_press(Message::ToggleEnergyMode).style(if self.energy_efficient_mode { iced::theme::Button::Positive } else { iced::theme::Button::Secondary }),
             ].spacing(5)
         } else if self.show_input_panel {
             column![
@@ -1322,7 +1405,22 @@ impl Application for MindMesh {
          ).padding(5).style(iced::theme::Container::Box);
 
         // Modal Panels
-        let modal_content: Option<Element<'_, Message>> = if self.show_onboarding {
+        let modal_content: Option<Element<'_, Message>> = if self.show_settings {
+            Some(container(
+                column![
+                    text("Settings").size(20),
+                    button("Toggle Theme").on_press(Message::ToggleTheme),
+                    button("High Contrast").on_press(Message::ToggleHighContrast),
+                    button("Colorblind Mode").on_press(Message::SetColorblindMode(Some("protanopia".to_string()))),
+                    button(if self.reduced_motion { "Reduced Motion: On" } else { "Reduced Motion: Off" }).on_press(Message::ToggleReducedMotion),
+                    button(if self.low_power_mode { "Low Power Mode: On" } else { "Low Power Mode: Off" }).on_press(Message::ToggleLowPowerMode),
+                    button(if self.vr_ar_mode { "VR/AR Mode: On" } else { "VR/AR Mode: Off" }).on_press(Message::ToggleVrArMode),
+                    text("Font Scale").size(14),
+                    vertical_slider(0.5..=2.0, self.font_scale, Message::SetFontScale).width(200),
+                    button("Close").on_press(Message::ToggleSettings),
+                ].spacing(10)
+            ).padding(20).center_x().center_y().style(iced::theme::Container::Box).into())
+        } else if self.show_onboarding {
             Some(container(
                 column![
                     text("Welcome to MindMesh").size(24).style(iced::theme::Text::Color(theme.text)),
@@ -1341,10 +1439,32 @@ impl Application for MindMesh {
                 ].spacing(20).align_items(iced::Alignment::Center)
             ).padding(40).center_x().center_y().style(iced::theme::Container::Box).into())
         } else if self.show_export_wizard {
+            let estimated_size = match self.export_format.as_str() {
+                "JSON" => "2.3 MB",
+                "GIF" => "15.7 MB",
+                "MP4" => "45.2 MB",
+                "VR Scene" => "8.9 MB",
+                _ => "Unknown",
+            };
+            let estimated_time = "2m 34s"; // placeholder
             Some(container(
                 column![
-                    text("Export Options").size(20).style(iced::theme::Text::Color(theme.text)),
-                    text_input("Format", &self.export_format).on_input(Message::SetExportFormat),
+                    text("Export Wizard").size(24),
+                    text("Choose format:").size(16),
+                    row![
+                        button("JSON").on_press(Message::SetExportFormat("JSON".to_string())),
+                        button("GIF").on_press(Message::SetExportFormat("GIF".to_string())),
+                        button("MP4").on_press(Message::SetExportFormat("MP4".to_string())),
+                        button("VR Scene").on_press(Message::SetExportFormat("VR Scene".to_string())),
+                    ].spacing(10),
+                    text(format!("Selected: {}", self.export_format)).size(14),
+                    text("Options:").size(16),
+                    button(if self.export_delta_only { "Delta Only: On" } else { "Delta Only: Off" }).on_press(Message::ToggleExportDeltaOnly),
+                    text("Compression Level:").size(14),
+                    vertical_slider(0.0..=1.0, self.export_compress, Message::SetExportCompress).width(200),
+                    button(if self.export_encryption { "Encryption: On" } else { "Encryption: Off" }).on_press(Message::ToggleExportEncryption),
+                    text(format!("Estimated Size: {}", estimated_size)).size(14),
+                    text(format!("Estimated Time: {}", estimated_time)).size(14),
                     button("Start Export").on_press(Message::StartExport).style(iced::theme::Button::Primary),
                     button("Cancel").on_press(Message::ShowExportWizard).style(iced::theme::Button::Secondary),
                 ].spacing(10)
@@ -1363,10 +1483,19 @@ impl Application for MindMesh {
             Some(container(
                 column![
                     text("Autonomous Experiment").size(20).style(iced::theme::Text::Color(theme.text)),
-                    text_input("Preset", &self.autonomous_preset).on_input(Message::SetAutonomousPreset),
-                    text_input("Energy Budget", &self.autonomous_energy_budget.to_string()).on_input(|_| Message::SimulateVrGesture), // placeholder
-                    text_input("Time Limit", &self.autonomous_time_limit.to_string()).on_input(|_| Message::SimulateVrGesture),
-                    button("Start").on_press(Message::StartAutonomousExperiment).style(iced::theme::Button::Primary),
+                    text("Choose preset:").size(16),
+                    row![
+                        button("Dream").on_press(Message::SetAutonomousPreset("Dream".to_string())),
+                        button("Replay").on_press(Message::SetAutonomousPreset("Replay".to_string())),
+                        button("Pattern Search").on_press(Message::SetAutonomousPreset("Pattern Search".to_string())),
+                        button("Random Explore").on_press(Message::SetAutonomousPreset("Random Explore".to_string())),
+                    ].spacing(10),
+                    text(format!("Selected: {}", self.autonomous_preset)).size(14),
+                    text("Energy Budget:").size(16),
+                    vertical_slider(10.0..=1000.0, self.autonomous_energy_budget, Message::SetAutonomousEnergyBudget).width(200),
+                    text("Time Limit (seconds):").size(16),
+                    vertical_slider(60.0..=3600.0, self.autonomous_time_limit as f64, |v| Message::SetAutonomousTimeLimit(v as u64)).width(200),
+                    button("Start Experiment").on_press(Message::StartAutonomousExperiment).style(iced::theme::Button::Primary),
                     button("Cancel").on_press(Message::ToggleAutonomousModal).style(iced::theme::Button::Secondary),
                 ].spacing(10)
             ).padding(20).center_x().center_y().style(iced::theme::Container::Box).into())
