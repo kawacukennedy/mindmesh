@@ -94,6 +94,10 @@ struct MindMesh {
     log_filter: String,
     show_help: bool,
     help_section: String,
+    help_search: String,
+    show_contextual_hint: bool,
+    contextual_hint: String,
+    last_activity: u64,
     deterministic_mode: bool,
     energy_budget: f64,
     rewire_mode: bool,
@@ -343,6 +347,9 @@ enum Message {
     ToggleVrArMode,
     ToggleHelp,
     SetHelpSection(String),
+    HelpSearchChanged(String),
+    UpdateActivity,
+    DismissHint,
 }
 
 impl Application for MindMesh {
@@ -447,6 +454,10 @@ impl Application for MindMesh {
                 log_filter: String::new(),
                 show_help: false,
                 help_section: "Overview".to_string(),
+                help_search: String::new(),
+                show_contextual_hint: false,
+                contextual_hint: String::new(),
+                last_activity: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
                 deterministic_mode: false,
                 energy_budget: 100.0,
                 rewire_mode: false,
@@ -1026,6 +1037,16 @@ impl Application for MindMesh {
             Message::SetHelpSection(section) => {
                 self.help_section = section;
             }
+            Message::HelpSearchChanged(query) => {
+                self.help_search = query;
+            }
+            Message::UpdateActivity => {
+                self.last_activity = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                self.show_contextual_hint = false;
+            }
+            Message::DismissHint => {
+                self.show_contextual_hint = false;
+            }
             Message::NewProject => {
                 self.network = Network::new();
                 self.notifications.push("New project created".to_string());
@@ -1103,6 +1124,7 @@ impl Application for MindMesh {
         } else {
             Subscription::none()
         };
+        let activity_timer = time::every(std::time::Duration::from_secs(1)).map(|_| Message::UpdateActivity);
         let keyboard = keyboard::on_key_press(|key, modifiers| {
             match key {
                 keyboard::Key::Named(keyboard::key::Named::Space) => Some(Message::TogglePause),
@@ -1134,7 +1156,7 @@ impl Application for MindMesh {
                 _ => None,
             }
         });
-        Subscription::batch(vec![timer, keyboard])
+        Subscription::batch(vec![timer, keyboard, activity_timer])
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -1142,6 +1164,19 @@ impl Application for MindMesh {
         use iced::Length;
 
         let theme = self.app_theme();
+
+        // Contextual hints engine
+        let current_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        if current_time - self.last_activity > 3 && !self.show_contextual_hint {
+            self.show_contextual_hint = true;
+            self.contextual_hint = if self.network.neurons.is_empty() {
+                "Try adding some neurons to get started!"
+            } else if !self.paused {
+                "Simulation is running. Try pausing to edit."
+            } else {
+                "Right-click on canvas for context menu."
+            }.to_string();
+        }
 
         let play_text = self.t("play");
         let pause_text = self.t("pause");
@@ -1574,16 +1609,29 @@ impl Application for MindMesh {
                 ].spacing(10)
             ).padding(20).center_x().center_y().style(iced::theme::Container::Box).into())
         } else if self.show_help {
-            let content = match self.help_section.as_str() {
-                "Overview" => "MindMesh is a neural network simulator with advanced visualization and AI features.",
-                "Tutorials" => "Interactive tutorials: UI Basics (5min), Mapping Advanced (12min), Autonomous Experiments (10min)",
-                "Keyboard Shortcuts" => "See the Shortcuts modal for full list.",
-                "Troubleshooting" => "Common issues: Low memory - switch to Ultralite mode, GPU issues - fallback to CPU.",
-                _ => "Select a section above.",
+            let all_content = vec![
+                ("Overview", "MindMesh is a neural network simulator with advanced visualization and AI features."),
+                ("Tutorials", "Interactive tutorials: UI Basics (5min), Mapping Advanced (12min), Autonomous Experiments (10min)"),
+                ("Keyboard Shortcuts", "See the Shortcuts modal for full list."),
+                ("Troubleshooting", "Common issues: Low memory - switch to Ultralite mode, GPU issues - fallback to CPU."),
+            ];
+            let filtered_content: Vec<_> = if self.help_search.is_empty() {
+                all_content.into_iter().filter(|(title, _)| title == &self.help_section).collect()
+            } else {
+                all_content.into_iter().filter(|(title, content)| 
+                    title.to_lowercase().contains(&self.help_search.to_lowercase()) || 
+                    content.to_lowercase().contains(&self.help_search.to_lowercase())
+                ).collect()
+            };
+            let content = if filtered_content.is_empty() {
+                "No results found.".to_string()
+            } else {
+                filtered_content.into_iter().map(|(_, c)| c).collect::<Vec<_>>().join("\n\n")
             };
             Some(container(
                 column![
                     text("Help & Tutorials").size(24),
+                    text_input("Search help...", &self.help_search).on_input(Message::HelpSearchChanged),
                     row![
                         button("Overview").on_press(Message::SetHelpSection("Overview".to_string())),
                         button("Tutorials").on_press(Message::SetHelpSection("Tutorials".to_string())),
@@ -1610,15 +1658,29 @@ impl Application for MindMesh {
         ].spacing(10).padding(10);
 
         // Apply modal overlay if needed
+        let layout_with_hint = if self.show_contextual_hint {
+            column![
+                main_layout,
+                container(
+                    row![
+                        text(&self.contextual_hint).size(14).style(iced::theme::Text::Color(theme.accent)),
+                        button("✕").on_press(Message::DismissHint).style(iced::theme::Button::Secondary),
+                    ].spacing(10).align_items(iced::Alignment::Center)
+                ).padding(10).style(iced::theme::Container::Box).center_x(),
+            ].spacing(10)
+        } else {
+            column![main_layout]
+        };
+
         if let Some(modal) = modal_content {
             container(
                 column![
-                    main_layout,
+                    layout_with_hint,
                     container(modal).center_x().center_y(),
                 ]
             ).into()
         } else {
-            main_layout.into()
+            layout_with_hint.into()
         }
     }
 }
