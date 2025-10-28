@@ -21,6 +21,8 @@ use std::io::{Read, Write};
 use flate2::{write::GzEncoder, read::GzDecoder, Compression};
 use aes_gcm::{Aes256Gcm, Key, Nonce, KeyInit, aead::Aead};
 use chrono::{DateTime, Utc};
+use std::thread;
+use std::sync::{Arc, Mutex};
 
 pub mod storage;
 pub mod analytics;
@@ -1263,6 +1265,7 @@ pub struct MindMeshSystem {
     pub ui_ux_layer: UiUxLayer,
     pub data_asset_layer: data_layer::DataAssetLayer,
     pub feature_flags: feature_flags::FeatureFlags,
+    pub standalone_processes: StandaloneProcesses,
 }
 
 #[derive(Debug)]
@@ -1323,8 +1326,61 @@ pub struct ModalsWizards {
     pub active: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct StandaloneProcesses {
+    pub plugin_host_process: Option<thread::JoinHandle<()>>,
+    pub ai_assistant_process: Option<thread::JoinHandle<()>>,
+    pub hardware_adapter_process: Option<thread::JoinHandle<()>>,
+    pub export_engine_process: Option<thread::JoinHandle<()>>,
+    pub collaboration_engine_process: Option<thread::JoinHandle<()>>,
+}
+
 impl MindMeshSystem {
     pub fn new() -> Self {
+        let ai_assistant = Arc::new(Mutex::new(ai::AIAssistant::new()));
+        let ai_clone = Arc::clone(&ai_assistant);
+
+        let ai_process = thread::spawn(move || {
+            loop {
+                thread::sleep(std::time::Duration::from_secs(5));
+                let mut ai = ai_clone.lock().unwrap();
+                // Simulate AI processing
+                ai.suggestions.push("Periodic check: Network stable".to_string());
+            }
+        });
+
+        let plugin_host_process = thread::spawn(|| {
+            loop {
+                thread::sleep(std::time::Duration::from_secs(10));
+                // Simulate plugin processing
+                println!("Plugin host process running");
+            }
+        });
+
+        let hardware_adapter_process = thread::spawn(|| {
+            loop {
+                thread::sleep(std::time::Duration::from_secs(2));
+                // Simulate hardware polling
+                println!("Hardware adapter process polling");
+            }
+        });
+
+        let export_engine_process = thread::spawn(|| {
+            loop {
+                thread::sleep(std::time::Duration::from_secs(15));
+                // Simulate background export
+                println!("Export engine process checking for tasks");
+            }
+        });
+
+        let collaboration_engine_process = thread::spawn(|| {
+            loop {
+                thread::sleep(std::time::Duration::from_secs(20));
+                // Simulate collaboration sync
+                println!("Collaboration engine process syncing");
+            }
+        });
+
         Self {
             core_engine: CoreEngine {
                 simulator: Network::new(),
@@ -1342,22 +1398,46 @@ impl MindMeshSystem {
                     render_engine: RenderEngine { thread: "main".to_string() },
                     input_pipeline: InputPipeline { inputs: vec![] },
                     accessibility_layer: AccessibilityLayer { features: vec!["keyboard".to_string(), "screen_reader".to_string()] },
-                    vr_ar_ui: None,
+                    vr_ar_ui: if feature_flags.vr_ar_features { Some(VrArUi { enabled: true }) } else { None },
                 },
                 modals_wizards: ModalsWizards { active: vec![] },
                 export_engine: export::ExportEngine::new(),
             },
             data_asset_layer: data_layer::DataAssetLayer::new(),
             feature_flags: feature_flags::FeatureFlags::new(),
+            standalone_processes: StandaloneProcesses {
+                plugin_host_process: Some(plugin_host_process),
+                ai_assistant_process: Some(ai_process),
+                hardware_adapter_process: Some(hardware_adapter_process),
+                export_engine_process: Some(export_engine_process),
+                collaboration_engine_process: Some(collaboration_engine_process),
+            },
         }
     }
 
     pub fn step(&mut self) {
+        self.data_asset_layer.audit_flow("Simulator", "step_start");
         self.core_engine.simulator.step();
+        self.data_asset_layer.audit_flow("Simulator", "step_end");
+
+        self.data_asset_layer.audit_flow("AnalyticsWorker", "analyze_start");
         self.core_engine.analytics_worker.analyze_network(&self.core_engine.simulator);
+        self.data_asset_layer.audit_flow("AnalyticsWorker", "analyze_end");
+
+        self.data_asset_layer.audit_flow("AIAssistant", "suggest_start");
         self.core_engine.ai_assistant.analyze_and_suggest(&self.core_engine.simulator);
+        self.data_asset_layer.audit_flow("AIAssistant", "suggest_end");
+
+        self.data_asset_layer.audit_flow("AutomationHost", "run_start");
         self.core_engine.automation_host.run_automation(&mut self.core_engine.simulator);
-        self.data_asset_layer.audit_flow("Simulator", "step");
+        self.data_asset_layer.audit_flow("AutomationHost", "run_end");
+
+        self.data_asset_layer.audit_flow("StorageManager", "sync_start");
+        // Simulate periodic snapshot
+        if rand::random::<f64>() < 0.01 {
+            let _ = self.core_engine.storage_manager.save_snapshot(&self.core_engine.simulator, "auto_snapshot.mm");
+        }
+        self.data_asset_layer.audit_flow("StorageManager", "sync_end");
     }
 }
 
