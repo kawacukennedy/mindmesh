@@ -962,29 +962,142 @@ impl Application for MindMesh {
             }
             Message::StartExport => {
                 // Start export
-                match self.export_format.as_str() {
-                    "JSON" => {
-                        if let Ok(json) = serde_json::to_string(&self.network) {
-                            // In real app, save to file or clipboard
-                            println!("Exported JSON: {}", json);
-                            self.notifications.push("JSON exported to console".to_string());
-                        } else {
-                            self.notifications.push("JSON export failed".to_string());
-                        }
-                    }
-                    "GIF" => {
-                        self.notifications.push("GIF export: Animation captured (placeholder)".to_string());
-                    }
-                    "MP4" => {
-                        self.notifications.push("MP4 export: Video rendered (placeholder)".to_string());
-                    }
-                    "VR Scene" => {
-                        self.notifications.push("VR Scene export: 3D model saved (placeholder)".to_string());
-                    }
-                    _ => {
-                        self.notifications.push(format!("Export format {} not implemented", self.export_format));
-                    }
-                }
+                 match self.export_format.as_str() {
+                     "JSON" => {
+                         if let Ok(json) = serde_json::to_string(&self.network) {
+                             // In real app, save to file or clipboard
+                             println!("Exported JSON: {}", json);
+                             self.notifications.push("JSON exported to console".to_string());
+                         } else {
+                             self.notifications.push("JSON export failed".to_string());
+                         }
+                     }
+                     "interactive_html" => {
+                         // Generate interactive HTML
+                         let html_content = format!(
+                             r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindMesh Interactive Visualization</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #0B0F14; color: #9AA7B2; }}
+        .container {{ max-width: 1200px; margin: 0 auto; }}
+        .header {{ text-align: center; margin-bottom: 20px; }}
+        .controls {{ margin-bottom: 20px; }}
+        .canvas {{ border: 1px solid #9AA7B2; background: #0B0F14; width: 100%; height: 600px; position: relative; }}
+        .neuron {{ position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #7BD389; }}
+        .connection {{ position: absolute; height: 1px; background: #5AB4FF; }}
+        .info {{ margin-top: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>MindMesh Interactive Brain</h1>
+            <p>Neurons: {}, Connections: {}</p>
+        </div>
+        <div class="controls">
+            <button onclick="step()">Step</button>
+            <button onclick="reset()">Reset</button>
+            <button onclick="togglePlay()">{{playPauseText}}</button>
+        </div>
+        <div class="canvas" id="canvas"></div>
+        <div class="info">
+            <p id="info">Steps: 0, Firing: 0</p>
+        </div>
+    </div>
+    <script>
+        const networkData = {};
+        let network = JSON.parse(networkData);
+        let canvas = document.getElementById('canvas');
+        let isPlaying = false;
+        let interval;
+
+        function draw() {{
+            canvas.innerHTML = '';
+            // Draw connections
+            network.connections.forEach(conn => {{
+                let from = network.neurons.find(n => n.id === conn.from_id);
+                let to = network.neurons.find(n => n.id === conn.to_id);
+                if (from && to) {{
+                    let line = document.createElement('div');
+                    line.className = 'connection';
+                    let dx = to.position[0] - from.position[0];
+                    let dy = to.position[1] - from.position[1];
+                    let length = Math.sqrt(dx*dx + dy*dy);
+                    let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                    line.style.width = length * 10 + 'px';
+                    line.style.left = (from.position[0] * 10 + 400) + 'px';
+                    line.style.top = (from.position[1] * 10 + 300) + 'px';
+                    line.style.transform = `rotate(${{angle}}deg)`;
+                    canvas.appendChild(line);
+                }}
+            }});
+            // Draw neurons
+            network.neurons.forEach(neuron => {{
+                let dot = document.createElement('div');
+                dot.className = 'neuron';
+                dot.style.left = (neuron.position[0] * 10 + 400) + 'px';
+                dot.style.top = (neuron.position[1] * 10 + 300) + 'px';
+                dot.style.opacity = neuron.output;
+                canvas.appendChild(dot);
+            }});
+            document.getElementById('info').textContent = `Steps: ${{network.time}}, Firing: ${{network.neurons.filter(n => n.output > 0.5).length}}`;
+        }}
+
+        function step() {{
+            // Simple step simulation (placeholder)
+            network.neurons.forEach(n => {{
+                n.output = Math.random();
+            }});
+            network.time += 1;
+            draw();
+        }}
+
+        function reset() {{
+            network.time = 0;
+            draw();
+        }}
+
+        function togglePlay() {{
+            isPlaying = !isPlaying;
+            if (isPlaying) {{
+                interval = setInterval(step, 100);
+            }} else {{
+                clearInterval(interval);
+            }}
+        }}
+
+        draw();
+    </script>
+</body>
+</html>"#,
+                             self.network.neurons.len(),
+                             self.network.connections.len(),
+                             serde_json::to_string(&self.network).unwrap_or("{}".to_string())
+                         );
+                         // Save to file
+                         if let Ok(_) = std::fs::write("export.html", html_content) {
+                             self.notifications.push("Interactive HTML exported to export.html".to_string());
+                         } else {
+                             self.notifications.push("HTML export failed".to_string());
+                         }
+                     }
+                     "GIF" => {
+                         self.notifications.push("GIF export: Animation captured (placeholder)".to_string());
+                     }
+                     "MP4" => {
+                         self.notifications.push("MP4 export: Video rendered (placeholder)".to_string());
+                     }
+                     "VR Scene" => {
+                         self.notifications.push("VR Scene export: 3D model saved (placeholder)".to_string());
+                     }
+                     _ => {
+                         self.notifications.push(format!("Export format {} not implemented", self.export_format));
+                     }
+                 }
                 self.show_export_wizard = false;
             }
             Message::ToggleShortcuts => {
@@ -1649,10 +1762,11 @@ impl Application for MindMesh {
                     container(
                         column![
                             text("Format Selection").size(16),
-                            button("JSON").on_press(Message::SetExportFormat("JSON".to_string())),
-                            button("GIF").on_press(Message::SetExportFormat("GIF".to_string())),
-                            button("MP4").on_press(Message::SetExportFormat("MP4".to_string())),
-                            button("VR Scene").on_press(Message::SetExportFormat("VR Scene".to_string())),
+                             button("JSON").on_press(Message::SetExportFormat("JSON".to_string())),
+                             button("Interactive HTML").on_press(Message::SetExportFormat("interactive_html".to_string())),
+                             button("GIF").on_press(Message::SetExportFormat("GIF".to_string())),
+                             button("MP4").on_press(Message::SetExportFormat("MP4".to_string())),
+                             button("VR Scene").on_press(Message::SetExportFormat("VR Scene".to_string())),
                             text(format!("Selected: {}", self.export_format)).size(14),
                             text("Presets").size(14),
                             button("Quick Export").on_press(Message::StartExport),
