@@ -42,6 +42,12 @@ impl canvas::Program<Message> for CanvasProgram {
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
 
+        // Draw gradient background
+        let gradient = canvas::Gradient::linear(iced::Vector::new(0.0, 0.0), iced::Vector::new(bounds.width, bounds.height))
+            .add_stop(0.0, Color::from_rgb(0.1, 0.1, 0.15))
+            .add_stop(1.0, Color::from_rgb(0.0, 0.0, 0.05));
+        frame.fill_rectangle(iced::Point::new(0.0, 0.0), iced::Size::new(bounds.width, bounds.height), gradient);
+
         // Draw background grid
         let grid_size = 50.0 * self.zoom;
         let start_x = (self.pan.0 % grid_size) - grid_size;
@@ -475,6 +481,7 @@ enum Message {
     ToggleLowPowerMode,
     ToggleVrArMode,
     ToggleHelp,
+    UpdateLayout,
     SetHelpSection(String),
     HelpSearchChanged(String),
     UpdateActivity,
@@ -1393,6 +1400,29 @@ impl Application for MindMesh {
             Message::ToggleCollaboration => {
                 self.show_collaboration = !self.show_collaboration;
             }
+            Message::UpdateLayout => {
+                self.network.update_positions();
+                self.notifications.push("Layout updated".to_string());
+            }
+            Message::StartP2PServer => {
+                if self.p2p_server.is_none() {
+                    match mindmesh_core::p2p::P2PServer::new(8080) {
+                        Ok(server) => {
+                            self.p2p_server = Some(server);
+                            self.notifications.push("P2P server started on port 8080".to_string());
+                        }
+                        Err(e) => self.notifications.push(format!("Failed to start P2P server: {}", e)),
+                    }
+                }
+            }
+            Message::ConnectToPeer(peer) => {
+                self.p2p_peers.push(peer.clone());
+                self.notifications.push(format!("Connected to peer: {}", peer));
+            }
+            Message::SendSnapshot => {
+                // Placeholder: send snapshot to peers
+                self.notifications.push("Snapshot sent to peers (placeholder)".to_string());
+            }
             Message::NewProject => {
                 self.network = Network::new();
                 self.notifications.push("New project created".to_string());
@@ -1673,8 +1703,9 @@ impl Application for MindMesh {
                     vertical_slider(0.1..=2.0, self.lod_slider, Message::LodChanged).width(60),
                     button(if self.show_connections { "🔗 Hide Edges" } else { "🔗 Show Edges" }).on_press(Message::ToggleConnections),
                     button(if self.visualization_overlays { "👁️ Hide Overlays" } else { "👁️ Show Overlays" }).on_press(Message::ToggleVisualizationOverlays),
-                    button("🎯 Predict").on_press(Message::Predict),
-                    button(if self.sandbox_network.is_some() { "✅ Commit Edit" } else { "✏️ Edit Mode" }).on_press(if self.sandbox_network.is_some() { Message::CommitSandbox } else { Message::StartSandboxEdit }),
+                     button("🎯 Predict").on_press(Message::Predict),
+                     button("🔄 Update Layout").on_press(Message::UpdateLayout),
+                     button(if self.sandbox_network.is_some() { "✅ Commit Edit" } else { "✏️ Edit Mode" }).on_press(if self.sandbox_network.is_some() { Message::CommitSandbox } else { Message::StartSandboxEdit }),
                     button(if self.rewire_mode { "🔗 Rewire: On" } else { "🔗 Rewire: Off" }).on_press(Message::ToggleRewireMode),
                     if self.sandbox_network.is_some() { button("❌ Revert").on_press(Message::RevertSandbox) } else { button("") },
                 ].spacing(8),
@@ -2139,8 +2170,9 @@ impl Application for MindMesh {
                     text("• P2P synchronization").size(12),
                     text("• Conflict resolution").size(12),
                     text("• Token-based joining").size(12),
-                    button("Start Session").on_press(Message::ToggleCollaboration),
-                    button("Close").on_press(Message::ToggleCollaboration),
+                     button("Start P2P Server").on_press(Message::StartP2PServer),
+                     button("Send Snapshot").on_press(Message::SendSnapshot),
+                     button("Close").on_press(Message::ToggleCollaboration),
                 ].spacing(10).align_items(iced::Alignment::Center)
             ).padding(30).center_x().center_y().style(iced::theme::Container::Box).into())
         } else if self.show_ethics_modal {
