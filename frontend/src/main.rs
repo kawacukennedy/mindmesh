@@ -85,6 +85,8 @@ struct MindMesh {
     show_mapping_wizard: bool,
     mapping_input_type: String,
     mapping_strategy: String,
+    mapping_preview: Vec<f64>,
+    mapping_resource_estimate: (usize, f64),
     show_export_wizard: bool,
     export_format: String,
     export_delta_only: bool,
@@ -330,6 +332,7 @@ enum Message {
     ShowMappingWizard,
     SetMappingInputType(String),
     SetMappingStrategy(String),
+    PreviewMapping,
     ApplyMapping,
     ShowExportWizard,
     SetExportFormat(String),
@@ -445,9 +448,11 @@ impl Application for MindMesh {
              show_ethics_modal: false,
              show_onboarding: true, // Show on first run
              onboarding_step: 0,
-             show_mapping_wizard: false,
-             mapping_input_type: "Text".to_string(),
-             mapping_strategy: "Auto-embed".to_string(),
+              show_mapping_wizard: false,
+              mapping_input_type: "Text".to_string(),
+              mapping_strategy: "Auto-embed".to_string(),
+              mapping_preview: vec![],
+              mapping_resource_estimate: (0, 0.0),
                show_export_wizard: false,
                 export_format: "JSON".to_string(),
                 export_delta_only: false,
@@ -934,12 +939,30 @@ impl Application for MindMesh {
             Message::SetMappingStrategy(s) => {
                 self.mapping_strategy = s;
             }
+            Message::PreviewMapping => {
+                // Compute preview
+                let input = match self.mapping_input_type.as_str() {
+                    "Text" => mindmesh_core::Input::Text("Sample input".to_string()),
+                    "Image" => mindmesh_core::Input::Bitmap(vec![128; 10]),
+                    _ => mindmesh_core::Input::Text("Sample".to_string()),
+                };
+                let mapping = match self.mapping_strategy.as_str() {
+                    "Auto-embed" => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::AutoEmbed, parameters: std::collections::HashMap::new(), manual_brush: None },
+                    "Hash-seed" => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::HashSeed, parameters: std::collections::HashMap::new(), manual_brush: None },
+                    _ => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::ManualPaint, parameters: std::collections::HashMap::new(), manual_brush: Some(vec![(0.0, 0.0, 1.0)]) },
+                };
+                self.mapping_resource_estimate = self.network.estimate_mapping_resources(&input, &mapping);
+                // For preview, simulate process_input on a copy
+                let mut temp_network = self.network.clone();
+                temp_network.process_input(input, Some(&mapping), &mut []);
+                self.mapping_preview = temp_network.neurons.iter().map(|n| n.output).collect();
+            }
             Message::ApplyMapping => {
                 // Apply mapping
                 let mapping = match self.mapping_strategy.as_str() {
                     "Auto-embed" => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::AutoEmbed, parameters: std::collections::HashMap::new(), manual_brush: None },
                     "Hash-seed" => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::HashSeed, parameters: std::collections::HashMap::new(), manual_brush: None },
-                    _ => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::ManualPaint, parameters: std::collections::HashMap::new(), manual_brush: None },
+                    _ => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::ManualPaint, parameters: std::collections::HashMap::new(), manual_brush: Some(vec![(0.0, 0.0, 1.0)]) },
                 };
                 self.network.input_mappings.insert(self.mapping_input_type.clone(), mapping);
                 self.show_mapping_wizard = false;
@@ -1808,6 +1831,16 @@ impl Application for MindMesh {
                     text("Mapping Wizard").size(20).style(iced::theme::Text::Color(theme.text)),
                     text_input("Input Type", &self.mapping_input_type).on_input(Message::SetMappingInputType),
                     text_input("Strategy", &self.mapping_strategy).on_input(Message::SetMappingStrategy),
+                    button("Preview").on_press(Message::PreviewMapping).style(iced::theme::Button::Secondary),
+                    if !self.mapping_preview.is_empty() {
+                        column![
+                            text(format!("Resource Estimate: {} neurons, {:.2} storage", self.mapping_resource_estimate.0, self.mapping_resource_estimate.1)).size(12),
+                            text("Activation Preview (first 10):").size(12),
+                            text(format!("{:?}", &self.mapping_preview[..10.min(self.mapping_preview.len())])).size(10),
+                        ].spacing(5)
+                    } else {
+                        text("Click Preview to see estimate and activation footprint").size(12)
+                    },
                     button("Apply").on_press(Message::ApplyMapping).style(iced::theme::Button::Primary),
                     button("Cancel").on_press(Message::ShowMappingWizard).style(iced::theme::Button::Secondary),
                 ].spacing(10)
@@ -2056,6 +2089,9 @@ impl canvas::Program<Message> for MindMesh {
                             (base_color.g + activity_boost).min(1.0),
                             (base_color.b + activity_boost).min(1.0),
                         );
+                        // Glow effect: draw thicker semi-transparent line
+                        let glow_color = Color::from_rgba(color.r, color.g, color.b, 0.3);
+                        frame.stroke(&path, canvas::Stroke::default().with_color(glow_color).with_width(width * 2.0));
                         frame.stroke(&path, canvas::Stroke::default().with_color(color).with_width(width));
 
                         // Add arrowhead for directed connections
@@ -2112,22 +2148,23 @@ impl canvas::Program<Message> for MindMesh {
             let activity_factor = neuron.output as f32;
             let energy_factor = (neuron.metadata.energy_cost as f32).min(1.0);
             let mut color = Color::from_rgb(
-                base_color.r * (0.5 + activity_factor * 0.5),
-                base_color.g * (0.5 + activity_factor * 0.5),
-                base_color.b * (1.0 - energy_factor * 0.3),
+                (base_color.r + activity_factor * 0.3).min(1.0),
+                (base_color.g + activity_factor * 0.3).min(1.0),
+                (base_color.b + activity_factor * 0.3).min(1.0),
+            );
+            color = Color::from_rgb(
+                (color.r * (1.0 - energy_factor * 0.5)).max(0.0),
+                (color.g * (1.0 - energy_factor * 0.5)).max(0.0),
+                (color.b * (1.0 - energy_factor * 0.5)).max(0.0),
             );
 
-            // Add pulsing effect for active neurons
-            if neuron.should_fire() {
-                let pulse = (self.network.time as f32 * 0.1).sin() * 0.5 + 0.5;
-                color = Color::from_rgb(
-                    color.r + pulse * 0.2,
-                    color.g + pulse * 0.2,
-                    color.b + pulse * 0.2,
-                );
-            }
-
             let circle = canvas::Path::circle(iced::Point::new(pos.0, pos.1), radius);
+            // Glow for active neurons
+            if neuron.should_fire() {
+                let glow_circle = canvas::Path::circle(iced::Point::new(pos.0, pos.1), radius * 1.5);
+                let glow_color = Color::from_rgba(color.r, color.g, color.b, 0.4);
+                frame.fill(&glow_circle, canvas::Fill { style: canvas::Style::Solid(glow_color), ..canvas::Fill::default() });
+            }
             frame.fill(&circle, canvas::Fill { style: canvas::Style::Solid(color), ..canvas::Fill::default() });
 
             // Add firing glow with multiple layers

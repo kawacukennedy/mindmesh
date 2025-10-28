@@ -3,6 +3,13 @@
 pub mod plugins;
 pub mod p2p;
 pub mod hardware;
+pub mod storage;
+pub mod analytics;
+pub mod ai;
+pub mod automation;
+pub mod export;
+pub mod data_layer;
+pub mod feature_flags;
 
 use serde::{Deserialize, Serialize};
 use rand::Rng;
@@ -14,6 +21,14 @@ use std::io::{Read, Write};
 use flate2::{write::GzEncoder, read::GzDecoder, Compression};
 use aes_gcm::{Aes256Gcm, Key, Nonce, KeyInit, aead::Aead};
 use chrono::{DateTime, Utc};
+
+pub mod storage;
+pub mod analytics;
+pub mod ai;
+pub mod automation;
+pub mod export;
+pub mod data_layer;
+pub mod feature_flags;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum NeuronType {
@@ -970,21 +985,30 @@ impl Network {
             Input::Text(ref text) => {
                 match mapping {
                     Some(Mapping { strategy: MappingStrategy::AutoEmbed, .. }) => {
-                        // Simple embedding: char codes
-                        text.chars().map(|c| c as u32 as f64 / 255.0).collect()
+                        // Improved embedding: positional and frequency-based
+                        let mut embedding = vec![0.0; 50]; // Fixed size embedding
+                        for (i, c) in text.chars().enumerate() {
+                            if i < embedding.len() {
+                                embedding[i] = (c as u32 as f64) / 255.0;
+                            }
+                            // Add frequency
+                            let freq_idx = (c as usize) % embedding.len();
+                            embedding[freq_idx] += 0.1;
+                        }
+                        embedding
                     }
                     Some(Mapping { strategy: MappingStrategy::HashSeed, .. }) => {
-                        // Hash to seed
+                        // Hash to seed with more dimensions
                         use std::collections::hash_map::DefaultHasher;
                         use std::hash::{Hash, Hasher};
                         let mut hasher = DefaultHasher::new();
                         text.hash(&mut hasher);
                         let hash = hasher.finish();
-                        (0..10).map(|i| ((hash >> (i * 6)) & 63) as f64 / 63.0).collect()
+                        (0..50).map(|i| ((hash >> (i * 3)) & 7) as f64 / 7.0).collect()
                     }
                     Some(Mapping { strategy: MappingStrategy::ManualPaint, manual_brush: Some(brush), .. }) => {
-                        // Use brush intensities
-                        brush.iter().map(|&(_, _, intensity)| intensity as f64).collect()
+                        // Map brush to neuron positions
+                        self.compute_brush_activation(brush)
                     }
                     _ => text.chars().map(|c| c as u32 as f64 / 255.0).collect(),
                 }
@@ -1014,7 +1038,7 @@ impl Network {
 
         // If no sensory neurons, create some
         if sensory_neurons.is_empty() && !data.is_empty() {
-            let num_to_create = data.len().min(10);
+            let num_to_create = data.len().min(50);
             for i in 0..num_to_create {
                 let id = self.add_neuron(NeuronType::Sensory, ActivationFunction::Relu);
                 if let Some(neuron) = self.neurons.last_mut() {
@@ -1048,6 +1072,51 @@ impl Network {
         self.connection_weight_compression();
         self.energy_efficient_firing();
         self.pattern_prioritization();
+    }
+
+    pub fn compute_brush_activation(&self, brush: &[(f32, f32, f32)]) -> Vec<f64> {
+        // Map brush points to neuron activations based on position
+        let mut activations = vec![0.0; self.neurons.len()];
+        for neuron in &self.neurons {
+            if let Some(idx) = self.neurons.iter().position(|n| n.id == neuron.id) {
+                let mut total_activation = 0.0;
+                for &(bx, by, intensity) in brush {
+                    let dx = neuron.position.0 - bx;
+                    let dy = neuron.position.1 - by;
+                    let dist_sq = dx * dx + dy * dy;
+                    let influence = (intensity as f64) / (1.0 + dist_sq); // Gaussian-like falloff
+                    total_activation += influence;
+                }
+                activations[idx] = total_activation.clamp(0.0, 1.0);
+            }
+        }
+        activations
+    }
+
+    pub fn estimate_mapping_resources(&self, input: &Input, mapping: &Mapping) -> (usize, f64) {
+        // Estimate neuron usage and storage cost
+        let data_len = match input {
+            Input::Text(text) => text.len(),
+            Input::Numbers(nums) => nums.len(),
+            Input::AsciiArt(art) => art.chars().filter(|&c| c != '\n').count(),
+            Input::Bitmap(bitmap) => bitmap.len(),
+            Input::Vector(vec) => vec.len(),
+            Input::Gesture(vec) => vec.len(),
+            Input::Voice(vec) => vec.len(),
+            Input::Sensor(vec) => vec.len(),
+            Input::Custom(vec) => vec.len(),
+        };
+        let neuron_usage = match mapping.strategy {
+            MappingStrategy::AutoEmbed => data_len.min(50),
+            MappingStrategy::HashSeed => 50,
+            MappingStrategy::ManualPaint => if let Some(ref brush) = mapping.manual_brush {
+                brush.len()
+            } else {
+                0
+            },
+        };
+        let storage_cost = (neuron_usage as f64) * 0.01; // Simplified
+        (neuron_usage, storage_cost)
     }
 
     pub fn connection_weight_compression(&mut self) {
@@ -1186,6 +1255,110 @@ impl Network {
     }
 
 
+}
+
+#[derive(Debug)]
+pub struct MindMeshSystem {
+    pub core_engine: CoreEngine,
+    pub ui_ux_layer: UiUxLayer,
+    pub data_asset_layer: data_layer::DataAssetLayer,
+    pub feature_flags: feature_flags::FeatureFlags,
+}
+
+#[derive(Debug)]
+pub struct CoreEngine {
+    pub simulator: Network,
+    pub storage_manager: storage::StorageManager,
+    pub analytics_worker: analytics::AnalyticsWorker,
+    pub plugin_host: plugins::WasmPlugin,
+    pub ai_assistant: ai::AIAssistant,
+    pub hardware_adapter_host: hardware::SerialAdapter,
+    pub automation_host: automation::AutomationHost,
+    pub collaboration_engine: p2p::P2PServer,
+}
+
+#[derive(Debug)]
+pub struct UiUxLayer {
+    pub ui_engine: UiEngine,
+    pub visualizer: Visualizer,
+    pub modals_wizards: ModalsWizards,
+    pub export_engine: export::ExportEngine,
+}
+
+#[derive(Debug)]
+pub struct UiEngine {
+    pub state: String,
+}
+
+#[derive(Debug)]
+pub struct Visualizer {
+    pub render_engine: RenderEngine,
+    pub input_pipeline: InputPipeline,
+    pub accessibility_layer: AccessibilityLayer,
+    pub vr_ar_ui: Option<VrArUi>,
+}
+
+#[derive(Debug)]
+pub struct RenderEngine {
+    pub thread: String,
+}
+
+#[derive(Debug)]
+pub struct InputPipeline {
+    pub inputs: Vec<Input>,
+}
+
+#[derive(Debug)]
+pub struct AccessibilityLayer {
+    pub features: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct VrArUi {
+    pub enabled: bool,
+}
+
+#[derive(Debug)]
+pub struct ModalsWizards {
+    pub active: Vec<String>,
+}
+
+impl MindMeshSystem {
+    pub fn new() -> Self {
+        Self {
+            core_engine: CoreEngine {
+                simulator: Network::new(),
+                storage_manager: storage::StorageManager::new(),
+                analytics_worker: analytics::AnalyticsWorker::new(),
+                plugin_host: plugins::WasmPlugin { store: wasmtime::Store::new(&wasmtime::Engine::default(), ()), process_func: todo!() }, // Placeholder
+                ai_assistant: ai::AIAssistant::new(),
+                hardware_adapter_host: hardware::SerialAdapter::new("/dev/ttyUSB0").unwrap_or_else(|_| hardware::SerialAdapter { port: Box::new(std::io::stdin()) }), // Placeholder
+                automation_host: automation::AutomationHost::new(),
+                collaboration_engine: p2p::P2PServer::new(8080).unwrap_or_else(|_| p2p::P2PServer { listener: std::net::TcpListener::bind("127.0.0.1:8080").unwrap() }),
+            },
+            ui_ux_layer: UiUxLayer {
+                ui_engine: UiEngine { state: "idle".to_string() },
+                visualizer: Visualizer {
+                    render_engine: RenderEngine { thread: "main".to_string() },
+                    input_pipeline: InputPipeline { inputs: vec![] },
+                    accessibility_layer: AccessibilityLayer { features: vec!["keyboard".to_string(), "screen_reader".to_string()] },
+                    vr_ar_ui: None,
+                },
+                modals_wizards: ModalsWizards { active: vec![] },
+                export_engine: export::ExportEngine::new(),
+            },
+            data_asset_layer: data_layer::DataAssetLayer::new(),
+            feature_flags: feature_flags::FeatureFlags::new(),
+        }
+    }
+
+    pub fn step(&mut self) {
+        self.core_engine.simulator.step();
+        self.core_engine.analytics_worker.analyze_network(&self.core_engine.simulator);
+        self.core_engine.ai_assistant.analyze_and_suggest(&self.core_engine.simulator);
+        self.core_engine.automation_host.run_automation(&mut self.core_engine.simulator);
+        self.data_asset_layer.audit_flow("Simulator", "step");
+    }
 }
 
 #[cfg(test)]
