@@ -638,5 +638,1029 @@
         {"date":"2025-10-15","changes":"Initial exhaustive UI/UX + physics + rendering budget spec generated"}
       ]
     }
+  },
+  "app_name": "MindMesh",
+  "version": "1.0.0",
+  "tagline": "A fully offline, self-evolving digital brain simulator — interactive, reproducible, extensible, and storage-efficient.",
+  "one_line_summary": "MindMesh simulates an evolvable neural substrate locally, learns from many input types, visualizes emergent activity in 2D/3D/VR/AR, supports live editing and autonomous experiments, and exports compact reproducible artifacts.",
+  "purpose": "Provide a privacy-first, local platform that enables researchers, artists, educators, and makers to create, explore, and share emergent neural artifacts with extreme configurability and minimal persistent storage.",
+  "principles": [
+    "Local-first privacy (no external APIs by default)",
+    "Reproducibility (snapshots include seeds & parameter manifests)",
+    "Extensibility (sandboxed plugin/WASM model)",
+    "Accessibility (keyboard-first, screen-reader-friendly, colorblind & high-contrast modes)",
+    "Efficiency (sparse/delta/procedural storage & on-demand loading)"
+  ],
+  "platforms": [
+    "Windows (EXE)",
+    "macOS (DMG/notarized)",
+    "Linux (AppImage/Flatpak)",
+    "WebAssembly (reduced feature set)",
+    "Optional VR/AR headsets (Quest/HoloLens/etc.)"
+  ],
+  "recommended_tech_stack": {
+    "core_engine": "Rust (primary) — performance & memory safety",
+    "optional_modules": ["Haskell (functional transforms)", "Elixir (supervision/actors)", "Julia (numerics)"],
+    "frontend_native": ["GTK/Qt via Rust bindings", "Tauri wrapper for web builds"],
+    "frontend_web": "WASM (Rust -> wasm) + WebGL/Three.js fallback (reduced features)",
+    "rendering": "OpenGL/Vulkan (desktop) / WebGL (web)",
+    "storage": "LMDB/SQLite for metadata + compressed binary blobs (Zstd/LZ4) + delta journal",
+    "ci_cd": "GitHub Actions / CircleCI cross-compile pipelines",
+    "packaging": "cargo-bundle, NSIS, macOS notarization, AppImage/Flatpak"
+  },
+  "architecture_overview": {
+    "processes": {
+      "simulator": "multithreaded Rust engine: neuron stepping, plasticity, pruning/growth, energy accounting",
+      "visualizer": "render thread/process for 2D/3D/VR views, LOD & particle systems",
+      "ui_engine": "manages panels, inputs, undo/redo, mapping editor, commands via IPC",
+      "storage_manager": "handles delta snapshot writes/reads, compaction, encryption, backup",
+      "analytics_worker": "runs detectors, session summaries, optional local AI analysis",
+      "plugin_host": "WASM sandbox (default) or optional native plugin host with explicit user approval",
+      "ai_assistant": "optional local assistant process (tiny transformer or heuristics)"
+    },
+    "data_flow": [
+      "User Input -> Input Mapper -> Stimulator -> Simulation Engine -> Visualizer + Analytics",
+      "UI Edits -> Command Bus -> Simulator (live or sandboxed preview)",
+      "Simulation State <-> Storage Manager (periodic & delta snapshots)",
+      "Analytics -> AI Assistant (optional) -> UI Suggestions"
+    ],
+    "on_disk_layout": {
+      "manifest": "manifest.json (project metadata, reproducibility manifest, engine version)",
+      "clusters": "clusters/ (compressed cluster blobs, lazy-loaded)",
+      "journal": "journal.delta (append-only change journal for quick commits)",
+      "metadata_db": "metadata.db (LMDB/SQLite indices, tags, thumbnails)",
+      "thumbnails": "thumbnails/ (small PNG previews)",
+      "exports": "exports/ (user exports)",
+      "logs": "logs/ (local diagnostic logs)"
+    }
+  },
+  "storage_formats_and_optimizations": {
+    "native_snapshot": ".mindmesh (binary compressed + manifest + delta journal reference)",
+    "interactive_export": "interactive HTML bundle (WASM viewer + compact snapshot + manifest)",
+    "media_exports": ["MP4 (H.264/HEVC)", "GIF", "PNG sequence"],
+    "analytics_exports": ["CSV", "JSON"],
+    "package": ".mindpkg (snapshot + viewer + metadata + README)",
+    "optimizations": [
+      "sparse adjacency lists (store only non-zero connections)",
+      "bit-packed neuron metadata (flags & small ints packed)",
+      "delta-only writes and append journaling for frequent saves",
+      "procedural recipes (store generator + seed instead of raw neuron lists where possible)",
+      "background compaction (merge delta into base snapshot)",
+      "lossy export modes for media (frame sampling, downscale)"
+    ],
+    "encryption_options": {
+      "at_rest": "AES-256 optional per-snapshot",
+      "in_transit": "optional LAN E2E for peer sessions",
+      "password_protect": "optional per-export password"
+    }
+  },
+  "simulation_core": {
+    "scales": {
+      "default_neurons": 100000,
+      "desktop_recommended_range": "100k - 1M (depends on RAM/GPU)",
+      "ultralite_mode": 10000,
+      "max_theoretical": "tens of millions (hardware-dependent)"
+    },
+    "neuron_models": [
+      "rate-based (fast, low-memory)",
+      "LIF (leaky integrate-and-fire)",
+      "spiking (temporal precision + STDP)",
+      "probabilistic/stochastic",
+      "meta-neurons (parameter modulators)",
+      "user-defined plugin neuron (WASM/native)"
+    ],
+    "connection_models": [
+      "sparse adjacency (default)",
+      "dense (for small nets / testing)",
+      "hierarchical cluster links",
+      "recurrent multi-layer links",
+      "long-range meta-links",
+      "hardware-mapped links (LED/haptics)"
+    ],
+    "plasticity_algorithms": [
+      "Hebbian",
+      "Spike Timing Dependent Plasticity (STDP)",
+      "Long-term potentiation/depression (LTP/LTD)",
+      "reward-modulated heuristics (reinforcement-inspired)",
+      "AI-assisted rewiring recommendations"
+    ],
+    "pruning_and_growth": {
+      "pruning": [
+        "activity-based pruning (threshold & inactivity windows)",
+        "weight magnitude threshold pruning",
+        "temporal decay pruning",
+        "energy-cost-based pruning"
+      ],
+      "growth": [
+        "procedural synaptogenesis",
+        "seeded guided growth (user or input-driven)",
+        "AI suggestion-driven synaptogenesis"
+      ]
+    },
+    "scheduler_and_timing": {
+      "time_step": "configurable microsecond–millisecond",
+      "adaptive_timestep": "aggregate steps for low-activity clusters",
+      "threading": "work-stealing threadpool with cluster affinity",
+      "gpu_offload": "optional GPU kernels for heavy compute paths",
+      "deterministic_mode": "fixed RNG seeds + deterministic scheduling for reproducibility"
+    },
+    "simulation_modes": [
+      "interactive real-time (render + edit)",
+      "batch high-speed (no rendering for experiments)",
+      "approximate low-fidelity for distant clusters",
+      "sandboxed experiment subset (isolated from global brain)"
+    ],
+    "internal_metrics": [
+      "tick duration per cluster",
+      "neuron firing rates",
+      "connection weight distributions",
+      "pruning/growth event counts",
+      "energy consumption estimates"
+    ],
+    "fault_tolerance": {
+      "checkpointing": "frequent lightweight delta checkpoints",
+      "rollback": "replay journal to restore state",
+      "isolation": "run untrusted plugin-supplied code in sandboxed processes"
+    }
+  },
+  "learning_system": {
+    "input_types": [
+      "text (UTF-8)",
+      "numeric vectors (CSV/TSV)",
+      "ASCII art",
+      "bitmap images (recommended <=256x256)",
+      "vector images (SVG)",
+      "time-series sensors",
+      "touch/gesture streams",
+      "voice (local STT optional)",
+      "hardware signals (serial/BLE/MIDI/OSC)"
+    ],
+    "mapping_strategies": {
+      "auto_embed": "local embedding model to map tokens/features into activation subspace",
+      "hash_seed": "deterministic hash to sparse neuron seeds",
+      "manual_paint": "visual brush maps activation intensity to neurons/clusters",
+      "example_indexing": "attach examples to clusters for nearest-match replay"
+    },
+    "mapping_editor_features": [
+      "brush (size, strength, falloff)",
+      "lasso selection & fill",
+      "mirror & transform tools (rotate, scale)",
+      "opacity/blend modes",
+      "auto-suggest mapping (top-3 previews + cost estimate)",
+      "import/export mapping presets (JSON)",
+      "preview activation footprint + resource estimate"
+    ],
+    "learning_modes": [
+      "unsupervised clustering (co-activation grouping)",
+      "supervised example pairs (input->desired pattern)",
+      "reinforcement feedback (thumbs up/down or scalar reward)",
+      "passive observation (statistical association)",
+      "scheduled replay/consolidation (configurable)"
+    ],
+    "memory_system": {
+      "short_term": "ring buffer of recent activations (N configurable)",
+      "long_term": "compressed weighted connection history & semantic index",
+      "decay": "configurable exponential/adaptive decay functions",
+      "replay": "scheduled/offline replay for consolidation (configurable rate)"
+    },
+    "feedback_mechanisms": [
+      "manual labels",
+      "thumbs up/down",
+      "1-5 rating",
+      "drag-to-promote/demote clusters",
+      "scripted reward functions via automation API"
+    ],
+    "preprocessing": [
+      "image downscale & quantize",
+      "audio MFCC extraction for voice",
+      "normalization & standardization",
+      "user-defined preprocess pipelines (WASM plugins)"
+    ],
+    "privacy_note": "All inputs remain local by default. Any sharing/export containing user data requires explicit confirmation."
+  },
+  "visualization": {
+    "modes": [
+      "2D force-directed graph",
+      "3D cloud/volume (voxel or point cloud)",
+      "heatmap overlay",
+      "timeline & time-lapse replay",
+      "VR immersive environment",
+      "AR overlay (device camera + permissions)"
+    ],
+    "viewport_controls": [
+      "orbit, pan, dolly/zoom",
+      "first-person VR camera",
+      "gaze-focus & snap-to-cluster",
+      "smooth transitions & inertia"
+    ],
+    "selection_and_tools": [
+      "point-select, multi-select, lasso-select",
+      "cluster expand/collapse, drill-down",
+      "temporal brush (select time windows)",
+      "annotation (text, emoji, color tags)"
+    ],
+    "render_features": [
+      "LOD: cluster aggregation & glyph substitution",
+      "edge thickness by weight; color by sign/intensity",
+      "glow pulses for activation & particle trails for spikes",
+      "filters: activity range, cluster tag, connection weight range",
+      "AI-suggestion overlays & predicted impact previews",
+      "time-lapse bookmarks & frame-by-frame stepping"
+    ],
+    "visual_presets": ["Research (dense info)", "Artistic (generative aesthetic)", "Ultralite (low-poly, minimal assets)"],
+    "sonification": {
+      "modes": [
+        "per-neuron click",
+        "cluster chord mapping",
+        "ambient generative audio mapped to global activity"
+      ],
+      "controls": [
+        "tempo mapping",
+        "pitch mapping",
+        "amplitude scaling",
+        "spatial audio in VR",
+        "mute/unmute"
+      ],
+      "export_audio": "render audio track synchronized with exported video"
+    },
+    "export_options": [
+      "video export (MP4 H.264/HEVC, user resolution & framerate)",
+      "animated GIF export",
+      "PNG sequence",
+      "interactive HTML bundle (WASM viewer + snapshot)",
+      "VR scene export (.glb/.gltf)"
+    ],
+    "visual_storage_optimizations": [
+      "procedural particle generation to avoid large assets",
+      "low-poly geometry presets for large scenes",
+      "delta-only visualization exports (store frame diffs)",
+      "frame sampling and temporal compression for long sessions"
+    ]
+  },
+  "ui_spec": {
+    "design_philosophy": [
+      "Low cognitive load by default with scalable discovery of advanced features",
+      "Keyboard-first power-user workflow",
+      "Accessible by default (screen reader, colorblind & high-contrast)",
+      "Clear user control over privacy, storage, and performance trade-offs"
+    ],
+    "themes": {
+      "default": "dark",
+      "alternates": ["light", "high-contrast"],
+      "colorblind_palettes": ["protanopia", "deuteranopia", "tritanopia"],
+      "customization": "user-defined palette support and CSS-like theming"
+    },
+    "layout": {
+      "header": {
+        "left": ["logo/title (click -> home)"],
+        "center": ["global search (projects, snapshots, inputs)"],
+        "right": ["session controls (play/pause), quick-save, undo/redo, preferences"]
+      },
+      "left_sidebar": {
+        "sections": [
+          "Project & Snapshot Manager (tree + search + tags + thumbnails)",
+          "Datasets & Inputs (list + import button)",
+          "Presets & Experiments (one-click load)"
+        ],
+        "behavior": "collapsible & resizable; keyboard accessible"
+      },
+      "main_canvas": {
+        "core": "Visual Thought Map (2D/3D toggle), playback scrubber, LOD slider, visualization toggles",
+        "overlays": ["time bookmarks", "mini analytics card", "contextual help"]
+      },
+      "right_sidebar": {
+        "panels": [
+          {
+            "Inspector": {
+              "purpose": "Show selected neuron/cluster metadata & actionable controls",
+              "fields": ["id", "type", "tags", "firing_rate", "last_fired", "threshold", "intrinsic_noise", "connections_count"],
+              "actions": ["edit params, annotate, isolate/pin, duplicate, export cluster"]
+            }
+          },
+          {
+            "Input Panel": {
+              "purpose": "Create & map inputs",
+              "actions": ["new input (text/image/gesture/device)", "choose mapping strategy", "preview mapping", "save mapping preset"]
+            }
+          },
+          {
+            "Simulation Controls": {
+              "purpose": "Control simulation & advanced options",
+              "controls": ["play/pause", "speed selector (0.01x - 100x batch)", "step forward/back", "reset simulation", "set RNG seed", "enable/disable autosave", "energy budget & sandbox toggles"],
+              "advanced": ["cluster isolation, deterministic run toggle, profiling view"]
+            }
+          },
+          {
+            "Export & AI Assistant": {
+              "purpose": "Export options & optional AI panel",
+              "export_actions": ["format selector, size estimate, compression/encryption toggles, start export"],
+              "ai_panel": ["list suggestions (confidence), explain button (reasoning trace), apply/reject"]
+            }
+          }
+        ],
+        "panels_detachable": true
+      },
+      "bottom_bar": {
+        "left": "log console (filterable & searchable)",
+        "center": "analytics mini-cards (firing rate, top clusters, energy usage)",
+        "right": "resource monitor (CPU/GPU/RAM/Energy), keyboard shortcut quick reference"
+      },
+      "modals": {
+        "onboarding_wizard": "multi-step interactive tutorial with privacy notice",
+        "export_wizard": "stepper for format, compression and encryption",
+        "conflict_resolution_modal": "visual three-way diff for collaborative conflicts",
+        "hardware_connect_modal": "device permission & mapping wizard"
+      }
+    },
+    "components": {
+      "NeuronCard": {
+        "display_fields": ["id", "type", "firing_rate", "last_fired", "threshold", "intrinsic_noise", "tags", "connections_count"],
+        "actions": ["isolate", "tag", "jump-to-cluster", "edit-thresholds", "show-history"]
+      },
+      "ClusterCard": {
+        "display_fields": ["name", "size", "dominant_input", "activation_history_sparkline", "energy_cost"],
+        "actions": ["promote", "pin", "export_cluster_snapshot", "annotate", "merge/split cluster"]
+      },
+      "MappingEditor": {
+        "tools": ["brush (size/strength)", "eraser", "lasso", "mirror", "auto-suggest", "import/export mapping presets"],
+        "preview": "activation footprint & estimated CPU/memory impact"
+      },
+      "TimeScrubber": {
+        "features": ["frame-by-frame stepping", "jump-to-event", "bookmark time ranges", "loop region", "velocity scrub"]
+      },
+      "SnapshotManager": {
+        "features": ["thumbnail view", "search & tags", "compare (diff) two snapshots", "quick restore", "export package"]
+      },
+      "AIHelpPanel": {
+        "features": ["sorted suggestions by confidence", "explain (reasoning trace)", "apply/reject", "tune assistant settings (compute budget, strictness)"]
+      }
+    },
+    "keyboard_shortcuts": {
+      "global": {
+        "new_project": "Ctrl/Cmd+N",
+        "open_project": "Ctrl/Cmd+O",
+        "save": "Ctrl/Cmd+S",
+        "save_as": "Ctrl/Cmd+Shift+S"
+      },
+      "simulation": {
+        "play_pause": "Space",
+        "increase_speed": "]",
+        "decrease_speed": "[",
+        "step_forward": "Alt+Right",
+        "step_back": "Alt+Left"
+      },
+      "navigation": {
+        "pan": "Arrow Keys",
+        "zoom_in_out": "+ / -",
+        "focus_selection": "F"
+      },
+      "editing": {
+        "paint_map": "P",
+        "erase_map": "E",
+        "duplicate": "D",
+        "delete": "Del"
+      },
+      "power_user": {
+        "toggle_ai": "G",
+        "enter_vr": "V",
+        "toggle_hud": "H"
+      }
+    },
+    "touch_and_vr_gestures": {
+      "touch": {
+        "pinch": "zoom",
+        "two_finger_pan": "pan",
+        "tap": "select",
+        "long_press": "context menu",
+        "draw": "mapping with finger"
+      },
+      "vr_hand_tracking": {
+        "pinch_grab": "select & move",
+        "pinch_drag": "rewire (drag to connect)",
+        "point_hold": "inspect",
+        "gaze": "focus/select",
+        "voice": "local voice commands (opt-in)"
+      },
+      "controller_inputs": {
+        "trigger": "select",
+        "thumbstick": "move/camera",
+        "buttons": "quick actions / menu"
+      }
+    },
+    "accessibility_features": {
+      "screen_reader": "ARIA roles & labels, dynamic live regions for key events",
+      "keyboard_navigation": "full tab order, focus outlines & visible focus states",
+      "colorblind_modes": ["protanopia", "deuteranopia", "tritanopia"],
+      "high_contrast_theme": "dedicated layout & palette",
+      "font_scaling": "global font size control",
+      "captions_subtitles": "for sonification & tutorial audio",
+      "voice_guided_onboarding": "optional local TTS/STT onboarding (opt-in)"
+    },
+    "localization_i18n": {
+      "i18n_ready": true,
+      "default_language": "en",
+      "rtl_support": true,
+      "translation_workflow": "PO/JSON files with CI validation"
+    }
+  },
+  "detailed_ux_flows": {
+    "onboarding_flow": {
+      "goal": "Introduce the product, privacy-first promise, and guide user to first saved snapshot",
+      "estimated_duration": "3-7 minutes",
+      "steps": [
+        {
+          "id": "welcome_modal",
+          "ui": "modal",
+          "content": "Short elevator pitch, privacy-first note (all local), 'Start Tutorial' and 'Skip' buttons",
+          "metrics": ["tutorial_started_flag"]
+        },
+        {
+          "id": "guided_tour",
+          "ui": "overlay hotspots",
+          "content": "Click through 3 hotspots: Canvas, Input Panel, Snapshot Manager. Each hotspot shows a quick interactive demo.",
+          "required_actions": ["click_canvas_hotspot", "open_inspector", "open_input_panel"]
+        },
+        {
+          "id": "first_input_wizard",
+          "ui": "mapping wizard",
+          "content": "Type a short phrase or drag a sample image; system shows two auto-mapping variants (Ultralite & Standard) and 'Paint Mapping' option.",
+          "required_actions": ["choose_mapping_variant_or_paint"]
+        },
+        {
+          "step_id": "play_and_observe",
+          "ui": "canvas playback",
+          "content": "Auto-run 10 steps with animation and mini-analytics update; user may pause or step through frames.",
+          "required_actions": ["observe_animation", "open_analytics_mini_card"]
+        },
+        {
+          "step_id": "save_snapshot",
+          "ui": "save dialog",
+          "content": "Name snapshot; show reproducibility manifest (seed, engine version, mapping preset). Offer interactive HTML export.",
+          "required_actions": ["save_snapshot"]
+        },
+        {
+          "step_id": "completion",
+          "ui": "toast/achievement",
+          "content": "Award 'First Thought' badge; suggest exploring Autonomous Mode or hardware outputs.",
+          "next_steps": ["try_autonomous_mode", "connect_hardware"]
+        }
+      ],
+      "fallbacks": [
+        {
+          "condition": "low_RAM",
+          "action": "Suggest Ultralite mapping & reduce neuron count; provide guidance modal."
+        },
+        {
+          "condition": "GPU_unavailable",
+          "action": "Switch to CPU renderer and advise performance expectations."
+        }
+      ],
+      "autosave": "Auto-create snapshot on tutorial completion (configurable)"
+    },
+    "input_creation_and_mapping_flow": {
+      "goal": "Map user input to neuronal activations and record learning",
+      "entry_points": ["Input Panel -> New Input", "drag & drop into Canvas", "hardware feed"],
+      "sequence": [
+        {
+          "step": 1,
+          "ui": "Input Picker",
+          "action": "Select input type: text, image, gesture, sensor, voice",
+          "notes": "Show resource estimate (neuron count impact, memory footprint)"
+        },
+        {
+          "step": 2,
+          "ui": "Mapping Strategy chooser",
+          "action": "Select auto-embed, hash-seed, or manual-paint; show top-3 preview mappings and expected neuron counts"
+        },
+        {
+          "step": 3,
+          "ui": "Mapping Editor",
+          "action": "If manual, user paints mapping; preview shows affected neurons and estimated impact"
+        },
+        {
+          "step": 4,
+          "ui": "Run Demo",
+          "action": "Stimulate mapped neurons N steps; visualize firing and mini-analytics update"
+        },
+        {
+          "step": 5,
+          "ui": "Feedback Capture",
+          "action": "User rates result (thumbs up/down or 1-5); system updates learning policy (e.g., reinforcement weight or replay bias)"
+        },
+        {
+          "step": 6,
+          "ui": "Save Mapping",
+          "action": "Persist mapping as preset and optionally attach mapping to experiment profile"
+        }
+      ],
+      "shortcuts": {
+        "quick_auto_map": "Q",
+        "enter_paint_mapping": "P",
+        "save_mapping_preset": "Ctrl/Cmd+Shift+M"
+      },
+      "edge_cases": [
+        {
+          "case": "input_too_large",
+          "resolution": "Suggest downscale/crop/quantize options, or choose Ultralite mapping preset."
+        },
+        {
+          "case": "ambiguous_mapping",
+          "resolution": "Present top-3 mapping suggestions with confidence; allow manual editing."
+        }
+      ]
+    },
+    "live_editing_and_exploration_flow": {
+      "goal": "Allow safe structural edits & parameter tuning during active simulation",
+      "steps": [
+        {
+          "step": 1,
+          "action": "Select neuron/cluster (click / lasso / VR pointer)",
+          "ui": "Inspector opens showing live metrics & sparklines"
+        },
+        {
+          "step": 2,
+          "action": "Sandbox preview edits by default (non-destructive); toggle 'apply live' to commit immediately",
+          "ui": "Inspector fields here: threshold, intrinsic noise, tags, pin/unpin"
+        },
+        {
+          "step": 3,
+          "action": "Drag to rewire: connect/disconnect nodes; UI shows predicted delta (firing change, energy/memory delta)",
+          "ui": "visual connector preview & confirm dialog"
+        },
+        {
+          "step": 4,
+          "action": "Commit changes; they are recorded in delta journal and can be undone",
+          "ui": "confirmation toast & undo option"
+        }
+      ],
+      "safety": [
+        "Sandbox preview default prevents accidental large changes",
+        "Auto-throttle edits if CPU/GPU load high",
+        "Immediate revert button visible for last committed change"
+      ],
+      "performance": [
+        "If edit load high, warn user and suggest pause or reduce LOD",
+        "Provide 'preview only' mode that simulates effects on a sampled mini-sandbox"
+      ]
+    },
+    "autonomous_experiment_flow": {
+      "goal": "Run isolated autonomous experiments that discover emergent patterns, with promote/reject flow and audit logging",
+      "setup": {
+        "ui": "Autonomous Mode modal",
+        "options": [
+          "preset (dream, replay, random exploration, pattern search)",
+          "sandbox_size (neuron/cluster count)",
+          "energy_budget (estimated CPU/energy cost)",
+          "time_limit",
+          "detection_sensitivity (what qualifies as emergent)"
+        ]
+      },
+      "execution": [
+        {
+          "step": 1,
+          "action": "Create sandbox subset (snapshot baseline) and isolate from global brain unless user allows global changes",
+          "ui": "Sandbox indicator & estimated resource usage"
+        },
+        {
+          "step": 2,
+          "action": "Run experiment (system stimuli, replay, stochastic exploration)",
+          "ui": "Live sandbox visualization & event timeline"
+        },
+        {
+          "step": 3,
+          "action": "Analytics worker detects candidate emergent motifs (repeating sequences, coherence events)",
+          "ui": "Non-intrusive notifications with small preview & confidence score"
+        },
+        {
+          "step": 4,
+          "action": "User decides to promote candidate motif to global brain (commit), export snapshot, or reject (discard changes)",
+          "ui": "Promote/Reject buttons with safety confirmations"
+        },
+        {
+          "step": 5,
+          "action": "Experiment summary displayed with reproducibility manifest (seed & params) and export options",
+          "ui": "Export buttons and recommend include of reproducibility manifest for publication"
+        }
+      ],
+      "auditing_and_safety": [
+        "All autonomous actions logged locally in audit trail",
+        "Max runtime & energy caps enforced",
+        "Auto-pause if anomalies or runaway resource consumption detected"
+      ]
+    },
+    "export_and_share_flow": {
+      "goal": "Export snapshots, interactive packages, or media with privacy & storage controls",
+      "steps": [
+        {
+          "step": 1,
+          "action": "Open Export modal from Snapshot Manager or main menu",
+          "ui": "Format selector (.mindmesh, .mindpkg, interactive HTML, MP4, GIF, VR scene)"
+        },
+        {
+          "step": 2,
+          "action": "Choose export options: delta-only vs full, include cluster blobs, procedural recipe vs raw lists, include analytics summary, encryption (AES-256), password protect",
+          "ui": "Size estimate and recommended optimizations shown"
+        },
+        {
+          "step": 3,
+          "action": "Start export; background job runs (show progress & ETA); support pause/cancel",
+          "ui": "Progress bar and notification on completion"
+        },
+        {
+          "step": 4,
+          "action": "On completion show path, provide quick actions: Open Folder, Copy Path, Share via LAN (explicit opt-in)",
+          "ui": "Finish screen with small 'privacy summary' reminding if user exported inputs"
+        }
+      ],
+      "sharing_options": [
+        "Save to local disk",
+        "Export to USB",
+        "Peer-to-peer LAN share (explicit opt-in)",
+        "Manual upload of .mindpkg if user desires (not automated)"
+      ],
+      "size_savings_tips": [
+        "Exclude inactive clusters",
+        "Use procedural recipes for generator-based clusters",
+        "Strip heavy analytics if not required"
+      ]
+    },
+    "analytics_and_insights_flow": {
+      "goal": "Provide interpretable metrics and optional explainable AI suggestions",
+      "entry": "Analytics dashboard (main menu or mini-cards in bottom bar)",
+      "steps": [
+        {
+          "step": 1,
+          "action": "Select metric/time window/cluster(s)",
+          "ui": "Metric selector: firing-rate histogram, cluster activation timeline, connection weight distribution, energy usage, rare event detector"
+        },
+        {
+          "step": 2,
+          "action": "View visualization & apply filters",
+          "ui": "Interactive charting with brush-to-zoom & export CSV/JSON"
+        },
+        {
+          "step": 3,
+          "action": "Optional AI overlay (opt-in) suggests pruning/candidate promotions & highlights anomalies with explainability text",
+          "ui": "AI panel lists suggestions with evidence traces & confidence"
+        },
+        {
+          "step": 4,
+          "action": "Export annotated metrics & snapshot for offline analysis or publication",
+          "ui": "Export CSV/JSON + reproducibility manifest"
+        }
+      ],
+      "ai_constraints": "AI insights disabled by default; if enabled, run locally and only with explicit user compute allowance"
+    },
+    "collaboration_flow": {
+      "goal": "Co-experiment locally without cloud reliance; explicit consent & role-based editing",
+      "constraints": ["LAN-only discovery by default; no cloud uploads unless user opts in explicitly"],
+      "roles": ["host (authoritative)", "participant (read-only or collaborative with permission)", "observer (view-only)"],
+      "steps": [
+        {
+          "step": 1,
+          "action": "Host creates session -> system generates ephemeral token and optional password; advertises on LAN if allowed",
+          "ui": "Session modal showing token, local IPs, and security settings"
+        },
+        {
+          "step": 2,
+          "action": "Participant enters token or discovers host; selects role & consents to permissions",
+          "ui": "Join modal with role selection & consent checkbox"
+        },
+        {
+          "step": 3,
+          "action": "Delta-based sync begins; UI shows sync progress, peer list, and conflict flags",
+          "ui": "Sync panel with operation log & local vs remote diffs"
+        },
+        {
+          "step": 4,
+          "action": "Conflict resolution: visual three-way merge UI surfaces conflicting edits; host/moderator resolves or auto-merge policy applies",
+          "ui": "Diff view with accept/reject & merge tools"
+        },
+        {
+          "step": 5,
+          "action": "Session end: host can snapshot final state & export package for participants",
+          "ui": "End session dialog & optional automatic package export"
+        }
+      ],
+      "security": [
+        "Optional LAN E2E encryption",
+        "Role-based editing permissions",
+        "Audit trail noting which peer performed which action, locally stored"
+      ]
+    },
+    "error_handling_and_recovery_flow": {
+      "principles": ["fail-safe, non-destructive, clear remediation steps, autosave & backups"],
+      "common_errors": [
+        {
+          "condition": "out_of_memory",
+          "ui_response": "Show modal recommending ultralite mode, reduce neuron count, or pause visuals; offer to save delta snapshot"
+        },
+        {
+          "condition": "gpu_driver_failure",
+          "ui_response": "Fallback to CPU renderer, capture GPU error logs, show suggested driver update steps"
+        },
+        {
+          "condition": "disk_full_during_export",
+          "ui_response": "Abort export gracefully, preserve partial delta journal, suggest alternate destination or compression"
+        },
+        {
+          "condition": "plugin_crash",
+          "ui_response": "Terminate plugin, sandbox isolation, show debug logs and 'report' button (local only unless user consents)"
+        }
+      ],
+      "crash_recovery": {
+        "on_restart": "Offer 'Restore last safe snapshot', 'Open logs', and 'Start with safe-mode (ultralite)' options",
+        "debug_bundle": "User may create a debug bundle (logs + manifest + recent delta journal) to share with maintainers if they consent"
+      }
+    }
+  },
+  "plugin_and_extension_model": {
+    "supported_plugin_types": ["WASM (sandboxed, preferred)", "native dynamic libs (advanced; require explicit user approval)"],
+    "capabilities": [
+      "custom neuron models",
+      "visualization layers",
+      "importers/exporters",
+      "automation & scripting",
+      "hardware adapters (LED/GPIO/Serial/BLE/MIDI)"
+    ],
+    "security_and_permissions": [
+      "Permission manifest that declares plugin capabilities & resource quotas",
+      "User-facing prompt to approve plugin permissions with human-readable explanation",
+      "Runtime resource/time caps enforced by host",
+      "Audit log entries for plugin actions"
+    ],
+    "dev_docs_and_templates": [
+      "WASM plugin template (Rust + wasm-bindgen)",
+      "Example neuron model plugin",
+      "Example visualization overlay plugin",
+      "Plugin testing harness & fuzzer"
+    ],
+    "distribution_model": [
+      "Manual local install (drag-drop plugin file)",
+      "Optional curated local repository (manual upload & curated listing)",
+      "No automatic remote plugin install by default"
+    ]
+  },
+  "automation_and_scripting": {
+    "scripting_host": "WASM sandbox",
+    "features": [
+      "Event triggers (on cluster X fires > threshold -> run script Y)",
+      "Batch experiment definitions (YAML/JSON driven)",
+      "Scheduled runs (cron-like local schedule)",
+      "Scripted export pipelines (generate snapshot -> export -> local move)"
+    ],
+    "safety": "Scripts run in sandbox with resource/time quotas and explicit permission requests",
+    "example_triggers": [
+      "on_cluster_prominence_detected -> create_snapshot('candidate_<ts>')",
+      "on_energy_threshold_exceeded -> pause_simulation_and_notify"
+    ]
+  },
+  "hardware_integration": {
+    "supported_devices": [
+      "USB serial sensors",
+      "BLE sensors",
+      "Cameras (for AR overlays & tracking)",
+      "LED matrices / strips (GPIO / USB)",
+      "Haptics (USB/BLE)",
+      "MIDI / OSC controllers"
+    ],
+    "use_cases": [
+      "Map cluster activity -> LED zones for physical visualization",
+      "Haptic pulses for emergent motif alerts",
+      "Feed live sensor data as inputs (e.g. IMU, temperature)",
+      "MIDI sonification driven by cluster firing patterns"
+    ],
+    "adapter_model": "Hardware adapters implemented as plugins with explicit permission manifests, sandboxed access, and optional signed drivers",
+    "safety": "Explicit user opt-in required for device access; warn for experimental BCI/hardware; drivers must be approved by user"
+  },
+  "ai_assistant_local_optional": {
+    "purpose": [
+      "Summarize session activity",
+      "Recommend pruning/promote candidates",
+      "Propose experiments & presets",
+      "Optimize export & storage settings"
+    ],
+    "constraints": [
+      "Runs strictly local when enabled",
+      "Model size configurable (tiny to medium) and must stay on-device",
+      "User must explicitly opt-in and set compute allowance (CPU/GPU caps)"
+    ],
+    "ux": {
+      "panel": "AI Assistant panel with ranked suggestions, confidence, 'explain' toggle and apply/reject actions",
+      "explainability": "Each suggestion includes short reasoning trace: metrics that triggered it, affected clusters, expected impact"
+    },
+    "privacy": "All reasoning traces and model artifacts stay local; no network calls unless user explicitly enables"
+  },
+  "performance_profiling_and_scalability": {
+    "profiling_tools": [
+      "Per-cluster CPU/GPU time breakdown",
+      "Simulation tick profiler",
+      "Frame-rate monitor overlay",
+      "Memory heatmap (per-blob usage)",
+      "Energy estimate meter"
+    ],
+    "modes": ["Ultralite (low memory & visual fidelity)", "Balanced", "High-Fidelity (max visuals)"],
+    "scaling_recommendations": [
+      "Use sparse models for >100k neurons",
+      "Enable delta snapshotting for frequent saves",
+      "Lower visualization LOD for very large networks",
+      "Offload heavy computation to GPU if available"
+    ],
+    "benchmarks": {
+      "100k_neurons_desktop_balanced": "interactive at 30-60 FPS depending on hardware and visual fidelity",
+      "1M_neurons_batch_mode": "requires GPU/TPU/cluster acceleration; visualization in low-fidelity mode"
+    },
+    "resource_limits": {
+      "configurable": ["max_memory_usage", "max_cpu_threads", "gpu_acceleration_toggle", "energy_budget_per_experiment"]
+    }
+  },
+  "testing_ci_cd_and_quality": {
+    "unit_tests": [
+      "neuron stepping correctness across models",
+      "plasticity invariants & stability",
+      "storage manager read/write & delta replay correctness"
+    ],
+    "integration_tests": [
+      "simulator & visualizer remain in sync (no drift)",
+      "snapshot roundtrip fidelity in deterministic mode",
+      "plugin sandbox integration & permission enforcement"
+    ],
+    "fuzzing_suite": "random input mapping fuzz tests & plugin fuzz trials",
+    "ui_smoke_tests": "automated onboarding & export flows (including WASM viewer smoke)",
+    "performance_regression_tests": "benchmarks across neuron counts & hardware profiles with regression alerts",
+    "accessibility_validation": "automated keyboard navigation & screen reader checks"
+  },
+  "observability_logging_and_audit": {
+    "structured_logs": "info/warn/error with timestamps & context; rotated & purgeable",
+    "audit_trail": "compact event log for autonomous experiments, plugin actions, collaborative edits; user-purgeable",
+    "debug_bundle": "user may create a debug bundle (logs + manifest + delta journal) to share with maintainers only if user consents",
+    "profiling_ui": "in-app profiler overlay and downloadable profiling report"
+  },
+  "deployment_packaging_and_hosting": {
+    "developer_prereqs": [
+      "Rust toolchain + cross-targets (x86_64-unknown-linux-gnu, x86_64-apple-darwin, x86_64-pc-windows-msvc)",
+      "wasm-pack for WASM builds (if used)",
+      "Node/npm for web bundling (optional)',",
+      "GHC/Elixir/Julia if using optional language modules"
+    ],
+    "desktop_build_steps": [
+      "1. git clone repository",
+      "2. install required toolchains & targets",
+      "3. cargo build --release (core engine)",
+      "4. build frontend (native bindings or WASM bundle)",
+      "5. run unit & integration tests, smoke tests",
+      "6. package artifacts: NSIS for Windows, notarize macOS DMG, AppImage or Flatpak for Linux"
+    ],
+    "wasm_viewer_build_steps": [
+      "1. cargo build --target wasm32-unknown-unknown or wasm-pack build",
+      "2. bundle minimal WASM viewer + snapshot loader",
+      "3. host static files on CDN or package into Tauri for native wrapper"
+    ],
+    "packaging_guidelines": [
+      "Provide signed installers & checksums",
+      "Include privacy & reproducibility manifests in installer",
+      "Offer Full and Ultralite builds (Full <= ~250MB; Ultralite WASM viewer 30–60MB depending on assets)"
+    ],
+    "auto_update_policy": {
+      "default": "disabled for privacy-first distribution",
+      "opt_in": "signed delta updates available if user opts into auto-update; require explicit consent and show changelog"
+    },
+    "release_channels": ["GitHub Releases (recommended)", "self-hosted download server", "curated plugin repo (manual uploads)"]
+  },
+  "backup_restore_and_migration": {
+    "automatic_backups": "configurable frequency (hourly/daily) using delta snapshots with retention policy",
+    "restore_flow": "list backups (thumbnails & manifest), preview manifest, restore to sandbox preview then commit",
+    "migration_tools": "scripts to convert older snapshot schemas to current with manifest documenting changes"
+  },
+  "research_ethics_and_compliance": {
+    "reproducibility": "Every snapshot includes reproducibility manifest (engine version, seed, parameters) suitable for publication",
+    "ethics": "Clear disclaimers for hardware/BCI features; not a medical device; BCI/hardware strictly research-only and opt-in",
+    "data_policy": "No telemetry or cloud uploads by default; any telemetry is opt-in with explicit consent and transparent data summary"
+  },
+  "community_and_monetization_models": {
+    "models": [
+      "Open-source core + paid pro plugins (hardware adapters, advanced analytics, local large-model assistant)",
+      "Donations/sponsorship",
+      "Research/enterprise licenses (on-prem builds with extra integrations & support)"
+    ],
+    "community_features": [
+      "Manual snapshot/preset exchange via file sharing (no central server by default)",
+      "Curated plugin repo where authors upload packages (manual reviews)",
+      "Community showcase gallery (manual uploads of interactive HTML exported bundles)"
+    ],
+    "governance": "Curated plugin publishing with review process for paid / enterprise-addons"
+  },
+  "ux_microinteractions_and_ui_behaviour": {
+    "hover_tooltips": "Show last 3 activations, most recent inputs that touched node, emergent badge",
+    "toasts": "Non-intrusive for saves/achievements; critical errors use blocking modal",
+    "undo_redo": "Full command stack with branching & named branches support",
+    "confirmation_modals": "Type-to-confirm for destructive irreversible actions",
+    "progressive_disclosure": "Advanced options under 'Advanced' toggles to keep beginner UI uncluttered"
+  },
+  "schemas_and_examples": {
+    "manifest_example": {
+      "project_name": "FirstThought",
+      "engine_version": "1.0.0",
+      "seed": 123456789,
+      "neuron_count": 100000,
+      "mapping_presets": ["auto_embed_v1"],
+      "created_at": "2025-10-13T00:00:00Z",
+      "parameters": {
+        "plasticity": "STDP_v1",
+        "pruning_policy": "activity_30d",
+        "visual_preset": "artistic"
+      }
+    },
+    "snapshot_schema": {
+      "header": {
+        "manifest_ref": "manifest.json",
+        "engine_version": "1.0.0",
+        "timestamp": "ISO8601"
+      },
+      "clusters": [
+        {
+          "id": "uuid",
+          "recipe_or_blob_ref": "clusters/abcd123.blob",
+          "metadata_summary": {"size_bytes": 12345, "dominant_input": "text:hello"}
+        }
+      ],
+      "delta_journal": [
+        {
+          "op": "connect",
+          "target": "neuronA",
+          "payload": {"to": "neuronB", "weight": 0.12},
+          "timestamp": "ISO8601"
+        }
+      ],
+      "analytics_summary": {
+        "top_clusters_ref": "analytics/top_2025-10-13.json",
+        "firing_histogram_ref": "analytics/hist_2025-10-13.json"
+      }
+    }
+  },
+  "acceptance_criteria_and_testing_checklist": {
+    "unit_tests": [
+      "Neuron stepping for each model produces expected outputs",
+      "Plasticity rule invariants hold under synthetic inputs",
+      "Storage manager roundtrip fidelity in deterministic mode"
+    ],
+    "integration_tests": [
+      "Simulator & visualizer remain in sync under load",
+      "Snapshot export/import roundtrip returns identical reproducible outputs in deterministic mode",
+      "Plugin sandbox integration & permission enforcement"
+    ],
+    "ux_acceptance": [
+      "Onboarding leads to saved snapshot with required steps completed",
+      "Input mapping editor preview correlates with observed activation footprint within resource estimate",
+      "Export flow provides accurate size estimates & privacy warnings"
+    ],
+    "performance": [
+      "100k neurons: interactive responsiveness under balanced settings",
+      "Batch runs for 1M neurons executed in headless mode with appropriate resource usage"
+    ],
+    "accessibility": [
+      "Keyboard navigation covers all major flows",
+      "Screen reader correctly reads panels & live regions",
+      "Colorblind & high-contrast themes pass contrast ratio checks"
+    ]
+  },
+  "roadmap_recommendATIONS": {
+    "mvp": [
+      "Rust core simulator (rate-based + LIF)",
+      "2D visualizer (interactive)",
+      "Text & small-image input mapping",
+      "Delta snapshot save/load & manifest",
+      "Basic UI: canvas, inspector, snapshot manager",
+      "Onboarding tutorial"
+    ],
+    "phase_2": [
+      "Spiking neurons + STDP",
+      "3D visualizer with LOD & particle system",
+      "Sonification & audio export",
+      "WASM plugin skeleton + docs",
+      "Basic P2P LAN collaboration"
+    ],
+    "phase_3": [
+      "VR mode (immersive) with hand-tracking",
+      "Local AI assistant (tiny transformer model, opt-in)",
+      "Hardware adapters & curated plugin marketplace",
+      "Advanced analytics & anomaly detectors",
+      "Enterprise research pack (deterministic harness & support)"
+    ],
+    "experimental": [
+      "Quantum-inspired neuron models (research module)",
+      "BCI integration (research-only, opt-in & strict safeguards)",
+      "Holographic projections & AR advanced features"
+    ]
+  },
+  "final_notes": {
+    "privacy_reminder": "MindMesh operates local-first. Any sharing/export is explicit and user-initiated.",
+    "implementation_advice": "Start minimal: validate core simulator + simple visualizer (WASM viewer) to gather feedback; iterate learning modes, analytics, plugins and AI assistant",
+    "follow_up_options": [
+      "Convert this JSON to a prioritized backlog (MVP -> Phase 2 -> Phase 3) with task breakdowns",
+      "Produce a component-level starter scaffold (Rust core + WASM viewer + Tauri shell)",
+      "Generate an architecture diagram (SVG/PNG)",
+      "Emit this file as downloadable JSON"
+    ]
   }
 }
