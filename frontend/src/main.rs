@@ -213,6 +213,7 @@ struct MindMesh {
     export_delta_only: bool,
     export_compress: f32,
     export_encryption: bool,
+    export_progress: f32,
     show_shortcuts: bool,
     log_filter: String,
     show_help: bool,
@@ -223,6 +224,8 @@ struct MindMesh {
     last_activity: u64,
     show_collaboration: bool,
     deterministic_mode: bool,
+    p2p_server: Option<mindmesh_core::p2p::P2PServer>,
+    p2p_peers: Vec<String>,
     energy_budget: f64,
     rewire_mode: bool,
     selected_neurons_for_rewire: Vec<u64>,
@@ -477,6 +480,10 @@ enum Message {
     UpdateActivity,
     DismissHint,
     ToggleCollaboration,
+    UpdateExportProgress(f32),
+    StartP2PServer,
+    ConnectToPeer(String),
+    SendSnapshot,
 }
 
 impl Application for MindMesh {
@@ -574,11 +581,12 @@ impl Application for MindMesh {
               mapping_strategy: "Auto-embed".to_string(),
               mapping_preview: vec![],
               mapping_resource_estimate: (0, 0.0),
-               show_export_wizard: false,
-                export_format: "JSON".to_string(),
-                export_delta_only: false,
-                export_compress: 0.5,
-                export_encryption: false,
+                show_export_wizard: false,
+                 export_format: "JSON".to_string(),
+                 export_delta_only: false,
+                 export_compress: 0.5,
+                 export_encryption: false,
+                 export_progress: 0.0,
                 show_shortcuts: false,
                 log_filter: String::new(),
                 show_help: false,
@@ -586,9 +594,11 @@ impl Application for MindMesh {
                 help_search: String::new(),
                 show_contextual_hint: false,
                 contextual_hint: String::new(),
-                last_activity: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
-                show_collaboration: false,
-                deterministic_mode: false,
+                 last_activity: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                 show_collaboration: false,
+                 deterministic_mode: false,
+                 p2p_server: None,
+                 p2p_peers: vec![],
                 energy_budget: 100.0,
                 rewire_mode: false,
                 selected_neurons_for_rewire: vec![],
@@ -1030,10 +1040,36 @@ impl Application for MindMesh {
                 self.autonomous_logging_level = level;
             }
             Message::StartAutonomousExperiment => {
-                // Start autonomous experiment
-                self.network.settings.energy_efficient_mode = true; // Example
-                self.log_console.push((format!("Started autonomous experiment: {}", self.autonomous_preset), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()));
+                // Start autonomous experiment based on preset
+                match self.autonomous_preset.as_str() {
+                    "Dream" => {
+                        self.network.settings.energy_efficient_mode = true;
+                        self.network.settings.energy_budget = self.autonomous_energy_budget;
+                        self.network.settings.deterministic = false;
+                        // Enable autonomous synaptogenesis
+                        self.network.autonomous_synaptogenesis();
+                    }
+                    "Replay" => {
+                        self.network.meta_learning_rewiring();
+                        self.network.settings.energy_budget = self.autonomous_energy_budget * 0.8;
+                    }
+                    "Pattern Search" => {
+                        self.network.ai_predictive_rewiring();
+                        self.network.settings.energy_budget = self.autonomous_energy_budget * 1.2;
+                    }
+                    "Random Explore" => {
+                        self.network.grow_connections(0.2);
+                        self.network.prune_connections(0.05);
+                        self.network.settings.energy_budget = self.autonomous_energy_budget;
+                    }
+                    _ => {}
+                }
+                // Set logging level
+                self.profiling_mode = self.autonomous_logging_level == "High";
+                // Set time limit (in real app, use timer)
+                self.log_console.push((format!("Started autonomous experiment: {} with energy budget {:.0}, time limit {}s, logging {}", self.autonomous_preset, self.autonomous_energy_budget, self.autonomous_time_limit, self.autonomous_logging_level), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()));
                 self.show_autonomous_modal = false;
+                self.notifications.push(format!("Autonomous experiment '{}' started", self.autonomous_preset));
             }
             Message::ToggleProfilingMode => {
                 self.profiling_mode = !self.profiling_mode;
@@ -1089,20 +1125,27 @@ impl Application for MindMesh {
             Message::PreviewMapping => {
                 // Compute preview
                 let input = match self.mapping_input_type.as_str() {
-                    "Text" => mindmesh_core::Input::Text("Sample input".to_string()),
-                    "Image" => mindmesh_core::Input::Bitmap(vec![128; 10]),
-                    _ => mindmesh_core::Input::Text("Sample".to_string()),
+                    "Text" => mindmesh_core::Input::Text("Hello, neural network!".to_string()),
+                    "Image" => mindmesh_core::Input::Bitmap(vec![128; 100]), // Larger sample
+                    "Voice" => mindmesh_core::Input::Voice(vec![0.5; 50]),
+                    "Sensor" => mindmesh_core::Input::Sensor(vec![0.3; 20]),
+                    _ => mindmesh_core::Input::Text("Sample input text".to_string()),
                 };
                 let mapping = match self.mapping_strategy.as_str() {
                     "Auto-embed" => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::AutoEmbed, parameters: std::collections::HashMap::new(), manual_brush: None },
                     "Hash-seed" => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::HashSeed, parameters: std::collections::HashMap::new(), manual_brush: None },
-                    _ => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::ManualPaint, parameters: std::collections::HashMap::new(), manual_brush: Some(vec![(0.0, 0.0, 1.0)]) },
+                    "Manual Paint" => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::ManualPaint, parameters: std::collections::HashMap::new(), manual_brush: Some(vec![(0.0, 0.0, 1.0), (0.5, 0.5, 0.8)]) },
+                    _ => mindmesh_core::Mapping { strategy: mindmesh_core::MappingStrategy::AutoEmbed, parameters: std::collections::HashMap::new(), manual_brush: None },
                 };
                 self.mapping_resource_estimate = self.network.estimate_mapping_resources(&input, &mapping);
                 // For preview, simulate process_input on a copy
                 let mut temp_network = self.network.clone();
                 temp_network.process_input(input, Some(&mapping), &mut []);
                 self.mapping_preview = temp_network.neurons.iter().map(|n| n.output).collect();
+                // Add activation summary
+                let avg_activation = self.mapping_preview.iter().sum::<f64>() / self.mapping_preview.len() as f64;
+                let max_activation = self.mapping_preview.iter().cloned().fold(0.0, f64::max);
+                self.notifications.push(format!("Preview: Avg activation {:.2}, Max {:.2}", avg_activation, max_activation));
             }
             Message::ApplyMapping => {
                 // Apply mapping
@@ -1131,8 +1174,21 @@ impl Application for MindMesh {
                 self.export_encryption = !self.export_encryption;
             }
             Message::StartExport => {
-                // Start export
-                 match self.export_format.as_str() {
+                self.export_progress = 0.1; // Start
+                // Simulate progress (in real app, use async)
+                return Command::perform(async { std::thread::sleep(std::time::Duration::from_millis(500)); }, |_| Message::UpdateExportProgress(0.3));
+            }
+            Message::UpdateExportProgress(progress) => {
+                self.export_progress = progress;
+                if progress >= 1.0 {
+                    // Complete export
+                    self.do_export();
+                    self.export_progress = 0.0;
+                } else {
+                    // Continue progress
+                    return Command::perform(async { std::thread::sleep(std::time::Duration::from_millis(300)); }, |_| Message::UpdateExportProgress(progress + 0.2));
+                }
+            }
                      "JSON" => {
                          if let Ok(json) = serde_json::to_string(&self.network) {
                              // In real app, save to file or clipboard
@@ -1978,8 +2034,12 @@ impl Application for MindMesh {
                             text("Step 3: Finalize - 1m 4s").size(12),
                             text("Warnings:").size(14),
                             text("Large file size may take time.").size(12),
-                            button("Start Export").on_press(Message::StartExport).style(iced::theme::Button::Primary),
-                            button("Cancel").on_press(Message::ShowExportWizard).style(iced::theme::Button::Secondary),
+                             if self.export_progress > 0.0 && self.export_progress < 1.0 {
+                                 iced::widget::ProgressBar::new(0.0..=1.0, self.export_progress).width(200)
+                             } else {
+                                 button("Start Export").on_press(Message::StartExport).style(iced::theme::Button::Primary)
+                             },
+                             button("Cancel").on_press(Message::ShowExportWizard).style(iced::theme::Button::Secondary),
                         ].spacing(10)
                     ).width(250).padding(10).style(iced::theme::Container::Box),
                 ].spacing(10)
@@ -1992,8 +2052,11 @@ impl Application for MindMesh {
                     text_input("Strategy", &self.mapping_strategy).on_input(Message::SetMappingStrategy),
                     button("Preview").on_press(Message::PreviewMapping).style(iced::theme::Button::Secondary),
                     if !self.mapping_preview.is_empty() {
+                        let avg_activation = self.mapping_preview.iter().sum::<f64>() / self.mapping_preview.len() as f64;
+                        let firing_count = self.mapping_preview.iter().filter(|&&a| a > 0.5).count();
                         column![
-                            text(format!("Resource Estimate: {} neurons, {:.2} storage", self.mapping_resource_estimate.0, self.mapping_resource_estimate.1)).size(12),
+                            text(format!("Resource Estimate: {} neurons, {:.2} MB storage", self.mapping_resource_estimate.0, self.mapping_resource_estimate.1)).size(12),
+                            text(format!("Activation Summary: Avg {:.2}, Firing neurons: {}", avg_activation, firing_count)).size(12),
                             text("Activation Preview (first 10):").size(12),
                             text(format!("{:?}", &self.mapping_preview[..10.min(self.mapping_preview.len())])).size(10),
                         ].spacing(5)
@@ -2138,6 +2201,144 @@ impl Application for MindMesh {
 }
 
 impl MindMesh {
+    fn do_export(&mut self) {
+        match self.export_format.as_str() {
+            "JSON" => {
+                if let Ok(json) = serde_json::to_string(&self.network) {
+                    // In real app, save to file or clipboard
+                    println!("Exported JSON: {}", json);
+                    self.notifications.push("JSON exported to console".to_string());
+                } else {
+                    self.notifications.push("JSON export failed".to_string());
+                }
+            }
+            "interactive_html" => {
+                let html_content = format!(
+                    r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindMesh Interactive Visualization</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #0B0F14; color: #9AA7B2; }}
+        .container {{ max-width: 1200px; margin: 0 auto; }}
+        .header {{ text-align: center; margin-bottom: 20px; }}
+        .controls {{ margin-bottom: 20px; }}
+        .canvas {{ border: 1px solid #9AA7B2; background: #0B0F14; width: 100%; height: 600px; position: relative; }}
+        .neuron {{ position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #7BD389; }}
+        .connection {{ position: absolute; height: 1px; background: #5AB4FF; }}
+        .info {{ margin-top: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>MindMesh Interactive Brain</h1>
+            <p>Neurons: {}, Connections: {}</p>
+        </div>
+        <div class="controls">
+            <button onclick="step()">Step</button>
+            <button onclick="reset()">Reset</button>
+            <button onclick="{{playPauseText}}">Play/Pause</button>
+        </div>
+        <div class="canvas" id="canvas"></div>
+        <div class="info">
+            <p id="info">Steps: 0, Firing: 0</p>
+        </div>
+    </div>
+    <script>
+        const networkData = {};
+        let network = JSON.parse(networkData);
+        let canvas = document.getElementById('canvas');
+        let isPlaying = false;
+        let interval;
+
+        function draw() {{
+            canvas.innerHTML = '';
+            // Draw connections
+            network.connections.forEach(conn => {{
+                let from = network.neurons.find(n => n.id === conn.from_id);
+                let to = network.neurons.find(n => n.id === conn.to_id);
+                if (from && to) {{
+                    let line = document.createElement('div');
+                    line.className = 'connection';
+                    let dx = to.position[0] - from.position[0];
+                    let dy = to.position[1] - from.position[1];
+                    let length = Math.sqrt(dx*dx + dy*dy);
+                    let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                    line.style.width = length * 10 + 'px';
+                    line.style.left = (from.position[0] * 10 + 400) + 'px';
+                    line.style.top = (from.position[1] * 10 + 300) + 'px';
+                    line.style.transform = `rotate(${{angle}}deg)`;
+                    canvas.appendChild(line);
+                }}
+            }});
+            // Draw neurons
+            network.neurons.forEach(neuron => {{
+                let dot = document.createElement('div');
+                dot.className = 'neuron';
+                dot.style.left = (neuron.position[0] * 10 + 400) + 'px';
+                dot.style.top = (neuron.position[1] * 10 + 300) + 'px';
+                dot.style.opacity = neuron.output;
+                canvas.appendChild(dot);
+            }});
+            document.getElementById('info').textContent = `Steps: ${{network.time}}, Firing: ${{network.neurons.filter(n => n.output > 0.5).length}}`;
+        }}
+
+        function step() {{
+            // Simple step simulation (placeholder)
+            network.neurons.forEach(n => {{
+                n.output = Math.random();
+            }});
+            network.time += 1;
+            draw();
+        }}
+
+        function reset() {{
+            network.time = 0;
+            draw();
+        }}
+
+        function togglePlay() {{
+            isPlaying = !isPlaying;
+            if (isPlaying) {{
+                interval = setInterval(step, 100);
+            }} else {{
+                clearInterval(interval);
+            }}
+        }}
+
+        draw();
+    </script>
+</body>
+</html>"#,
+                    self.network.neurons.len(),
+                    self.network.connections.len(),
+                    serde_json::to_string(&self.network).unwrap_or("{}".to_string())
+                );
+                // Save to file
+                if let Ok(_) = std::fs::write("export.html", html_content) {
+                    self.notifications.push("Interactive HTML exported to export.html".to_string());
+                } else {
+                    self.notifications.push("HTML export failed".to_string());
+                }
+            }
+            "GIF" => {
+                self.notifications.push("GIF export: Animation captured (placeholder)".to_string());
+            }
+            "MP4" => {
+                self.notifications.push("MP4 export: Video rendered (placeholder)".to_string());
+            }
+            "VR Scene" => {
+                self.notifications.push("VR Scene export: 3D model saved (placeholder)".to_string());
+            }
+            _ => {
+                self.notifications.push(format!("Export format {} not implemented", self.export_format));
+            }
+        }
+        self.show_export_wizard = false;
+    }
     fn app_theme(&self) -> AppTheme {
         if self.high_contrast {
             AppTheme::high_contrast()
