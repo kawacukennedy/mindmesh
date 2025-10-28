@@ -18,6 +18,127 @@ struct Particle {
     max_life: f32,
 }
 
+struct CanvasProgram {
+    network: Network,
+    zoom: f32,
+    pan: (f32, f32),
+    particles: Vec<Particle>,
+    show_connections: bool,
+    show_3d: bool,
+    lod_slider: f32,
+    visualization_overlays: bool,
+}
+
+impl canvas::Program<Message> for CanvasProgram {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &iced::Renderer,
+        theme: &Theme,
+        bounds: iced::Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+
+        // Draw background grid
+        let grid_size = 50.0 * self.zoom;
+        let start_x = (self.pan.0 % grid_size) - grid_size;
+        let start_y = (self.pan.1 % grid_size) - grid_size;
+        for x in (start_x as i32..((bounds.width + grid_size) as i32)).step_by(grid_size as usize) {
+            let path = canvas::Path::line(
+                iced::Point::new(x as f32, 0.0),
+                iced::Point::new(x as f32, bounds.height),
+            );
+            frame.stroke(&path, canvas::Stroke::default().with_color(Color::from_rgba(0.5, 0.5, 0.5, 0.2)).with_width(1.0));
+        }
+        for y in (start_y as i32..((bounds.height + grid_size) as i32)).step_by(grid_size as usize) {
+            let path = canvas::Path::line(
+                iced::Point::new(0.0, y as f32),
+                iced::Point::new(bounds.width, y as f32),
+            );
+            frame.stroke(&path, canvas::Stroke::default().with_color(Color::from_rgba(0.5, 0.5, 0.5, 0.2)).with_width(1.0));
+        }
+
+        // Draw connections if enabled, with LOD
+        if self.show_connections && self.network.neurons.len() < 1000 || self.lod_slider > 0.5 {
+            let max_connections = if self.lod_slider < 0.3 { 100 } else if self.lod_slider < 0.7 { 500 } else { usize::MAX };
+            for (i, conn) in self.network.connections.iter().enumerate() {
+                if i > max_connections { break; }
+                if let Some(from_idx) = self.network.neurons.iter().position(|n| n.id == conn.from_id) {
+                    if let Some(to_idx) = self.network.neurons.iter().position(|n| n.id == conn.to_id) {
+                        let from_pos = (
+                            (self.network.neurons[from_idx].position.0 * self.zoom + self.pan.0 + bounds.width / 2.0),
+                            (self.network.neurons[from_idx].position.1 * self.zoom + self.pan.1 + bounds.height / 2.0),
+                        );
+                        let to_pos = (
+                            (self.network.neurons[to_idx].position.0 * self.zoom + self.pan.0 + bounds.width / 2.0),
+                            (self.network.neurons[to_idx].position.1 * self.zoom + self.pan.1 + bounds.height / 2.0),
+                        );
+                        let path = canvas::Path::line(
+                            iced::Point::new(from_pos.0, from_pos.1),
+                            iced::Point::new(to_pos.0, to_pos.1),
+                        );
+                        let color = if conn.weight > 0.0 {
+                            Color::from_rgb(0.0, 1.0, 0.0) // Green for excitatory
+                        } else {
+                            Color::from_rgb(1.0, 0.0, 0.0) // Red for inhibitory
+                        };
+                        let alpha = (conn.weight.abs() * 0.5).min(1.0);
+                        frame.stroke(&path, canvas::Stroke::default().with_color(color.scale_alpha(alpha)).with_width(2.0));
+                    }
+                }
+            }
+        }
+
+        // Draw neurons
+        for neuron in &self.network.neurons {
+            let pos = (
+                neuron.position.0 * self.zoom + self.pan.0 + bounds.width / 2.0,
+                neuron.position.1 * self.zoom + self.pan.1 + bounds.height / 2.0,
+            );
+            if pos.0 < 0.0 || pos.0 > bounds.width || pos.1 < 0.0 || pos.1 > bounds.height {
+                continue; // Skip off-screen
+            }
+            let radius = 5.0 + neuron.output * 10.0;
+            let color = if neuron.should_fire() {
+                Color::from_rgb(1.0, 1.0, 0.0) // Yellow for firing
+            } else {
+                match neuron.neuron_type {
+                    NeuronType::Excitatory => Color::from_rgb(0.0, 1.0, 0.0),
+                    NeuronType::Inhibitory => Color::from_rgb(1.0, 0.0, 0.0),
+                    _ => Color::from_rgb(0.5, 0.5, 1.0),
+                }
+            };
+            frame.fill_circle(iced::Point::new(pos.0, pos.1), radius, color);
+            // Glow effect
+            frame.fill_circle(iced::Point::new(pos.0, pos.1), radius * 1.5, color.scale_alpha(0.3));
+        }
+
+        // Draw particles
+        for particle in &self.particles {
+            let alpha = particle.life / particle.max_life;
+            let color = Color::from_rgba(1.0, 0.5, 0.0, alpha);
+            frame.fill_circle(
+                iced::Point::new(particle.position.0, particle.position.1),
+                2.0,
+                color,
+            );
+        }
+
+        // Draw overlays if enabled
+        if self.visualization_overlays {
+            // Mini analytics
+            let firing_count = self.network.neurons.iter().filter(|n| n.should_fire()).count();
+            let text = format!("Firing: {}", firing_count);
+            // Note: Iced canvas doesn't have text drawing directly, would need to overlay text widget
+        }
+
+        vec![frame.into_geometry()]
+    }
+}
+
 struct MindMesh {
     network: Network,
     input_text: String,
@@ -921,10 +1042,36 @@ impl Application for MindMesh {
                 self.show_ethics_modal = !self.show_ethics_modal;
             }
             Message::NextOnboardingStep => {
-                if self.onboarding_step < 4 {
-                    self.onboarding_step += 1;
-                } else {
-                    self.show_onboarding = false;
+                match self.onboarding_step {
+                    0 => {
+                        // After welcome, go to tour
+                        self.onboarding_step = 1;
+                        self.show_input_panel = true; // Highlight left sidebar
+                    }
+                    1 => {
+                        // After tour, go to first input
+                        self.onboarding_step = 2;
+                        self.show_mapping_wizard = true;
+                    }
+                    2 => {
+                        // After first input, go to play
+                        self.onboarding_step = 3;
+                        self.paused = false; // Start simulation
+                        self.notifications.push("Simulation started for observation".to_string());
+                    }
+                    3 => {
+                        // After play, go to save
+                        self.onboarding_step = 4;
+                        self.paused = true; // Pause
+                        self.show_snapshot_manager = true;
+                    }
+                    4 => {
+                        // Completion
+                        self.show_onboarding = false;
+                        self.achievements.push("First Thought".to_string());
+                        self.notifications.push("Achievement unlocked: First Thought!".to_string());
+                    }
+                    _ => {}
                 }
             }
             Message::SkipOnboarding => {
@@ -1482,7 +1629,19 @@ impl Application for MindMesh {
                     text(format!("{:.1}%", self.playback_scrubber)).size(12),
                 ].spacing(8),
                 // Main Canvas
-                container(Canvas::new(self).width(Length::Fill).height(Length::Fill)),
+                container({
+                    let program = CanvasProgram {
+                        network: self.network.clone(),
+                        zoom: self.zoom,
+                        pan: self.pan,
+                        particles: self.particles.clone(),
+                        show_connections: self.show_connections,
+                        show_3d: self.show_3d,
+                        lod_slider: self.lod_slider,
+                        visualization_overlays: self.visualization_overlays,
+                    };
+                    Canvas::new(program).width(Length::Fill).height(Length::Fill)
+                }),
                 // Overlays
                 if self.visualization_overlays {
                     row![
@@ -2121,8 +2280,10 @@ impl canvas::Program<Message> for MindMesh {
             }
         }
 
-        // Draw neurons
-        for neuron in &self.network.neurons {
+        // Draw neurons with LOD
+        let neuron_skip = if self.network.neurons.len() > 5000 { 5 } else if self.network.neurons.len() > 1000 { 2 } else { 1 };
+        for (i, neuron) in self.network.neurons.iter().enumerate() {
+            if i % neuron_skip != 0 { continue; }
             let pos = (
                 (neuron.position.0 * self.zoom + self.pan.0) + bounds.width / 2.0,
                 (neuron.position.1 * self.zoom + self.pan.1) + bounds.height / 2.0,
